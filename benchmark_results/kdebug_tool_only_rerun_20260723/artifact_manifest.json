@@ -3,6 +3,11 @@
   "suite": "kdebug_tool_only_rerun_20260723",
   "files": [
     {
+      "path": "case_model_tool_analysis.md",
+      "bytes": 28867,
+      "sha256": "fad2330dc28102af6391a1e0e59698e1bcc4acff7c9c42cb3771d009b84fc7ee"
+    },
+    {
       "path": "docx_out/benchmark_summary_report.docx",
       "bytes": 42161,
       "sha256": "ef0e744f9a5bf2e1f9d39958e96824d220248d43ff658e70992f23cfa56b1a00"
