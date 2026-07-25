@@ -3,8 +3,9 @@
 > Suite：`kdebug_tool_only_rerun_20260723`
 > VM：`/home/host/kverif_runs/kdebug_tool_only_rerun_20260723`
 > 本地结果：`E:\xverif\benchmark_results\kdebug_tool_only_rerun_20260723`
-> 分析对象：`gpt-5.5`、`qwen3.6-35b`，仅 `with_kdebug` 组
-> 明确排除：`glm-4.7`、`without_kdebug`
+> 最新轮分析对象：`gpt-5.5`、`qwen3.6-35b`，仅 `with_kdebug` 组
+> 最新轮明确排除：`glm-4.7`、`without_kdebug`
+> 历史无工具对照：`kdebug_xiangshan_v2_run_20260630_025641_20260704_qwen_final/results.csv`
 
 ## 1. 结论摘要
 
@@ -29,7 +30,8 @@
    这些任务在 3600 秒预算内反复输出相同、不可应用的 diff，没有进入有效 build/run。
 
 本轮没有运行 `without_kdebug` 对照组，因此本文只能根据 transcript 内的证据使用链判断
-KDebug 是否参与定位，不能把 PASS 率差异解释成严格的工具因果增益。
+KDebug 是否参与定位。第 10 节补充的是另一轮 benchmark 的历史无工具结果，只能用于逐 case
+观察，不能把 PASS 率或耗时差异解释成严格的工具因果增益。
 
 ## 2. 最新结果
 
@@ -478,3 +480,83 @@ byte/MMIO decode，再在 `NewLoadUnit` 上尝试清 bit 0、把值 1 强制改 
 
 最终产物校验见本地 `validation.json`：32 行结果唯一且均为终态，32 张截图非空，3 份
 Word 报告共 59 页均完成渲染和页边界检查。
+
+## 9. 不同模型实际使用的 KDebug 证据
+
+下表把“独立采集步骤生成了什么”与“模型实际怎样使用”分开。原始证据来自每个 case 的
+KDebug manifest 和 JSON；模型使用情况来自 `evidence_used`、transcript、补丁、build/run/judge
+反馈的交叉核对。32 个任务均为 `tool_evidence_valid=true`，但这只说明证据文件通过门禁；
+TIMEOUT 行中 `results.csv` 的 `evidence_used` 有些被终态聚合器写成通用描述，因此不能只靠该列
+判断模型是否真正理解证据。
+
+| Case | 独立采集的 KDebug 证据 | GPT-5.5 实际使用的证据 | Qwen3.6-35B 实际使用的证据 |
+|---|---|---|---|
+| `case_001` | `kdebug_handshake_window.json`：`addr_q <- bus.req_addr` | 用该 driver 排除上游请求地址损坏，继续检查下游 AW 端口并删除 burst 地址 XOR 8，PASS。 | 引用同一 driver 和 data mismatch，找到 AW 地址 XOR；首补丁破坏括号，依据 VCS 反馈修正后 PASS。 |
+| `case_002` | `kdebug_first_bad_beat.json`：`status_q` 的 driver 为 `XS_ST_OK` 与 `select_status(...)` | 以 status path 为入口，结合 `got=0, exp=2` 检查最终 B/R mux，删除四 beat 强制 OK，PASS。 | 已明确指出 `sel_err && beats_q==4` 强制 OK，但 464 轮 diff 上下文均未匹配；证据理解正确、补丁未落地，TIMEOUT。 |
+| `case_003` | `kdebug_data_mismatch.json`：`eff_mask_q <- mask_q/8'h00/8'hff` | 由正常 mask driver 转查下游 W strobe，删除非首 beat 的 `& 8'hfe`，PASS。 | 同样把证据与 write path 联系起来，定位并删除 `& 8'hfe`，PASS。 |
+| `case_004` | `kdebug_decode_observation.json`：`sel_uart <- target_q` | 沿 target/decode 链反查 `0x1bad_xxxx`，删除伪 UART 页匹配，PASS。 | 用同一 trace 判断地址被错误路由到 `T_UART`；一次 API 重试后给出正确单行修复，PASS。 |
+| `case_005` | `kdebug_response_order.json`：`status_q <- select_status(...)` | 从 status 生成链继续检查最终 response mux，删除 `T_ERR && addr_q[5]` 强制 OK，PASS。 | 已准确指出 `addr_q[5]` 吞掉 `SLVERR`，但 620 轮 patch 均未应用；证据定位有效、执行失败，TIMEOUT。 |
+| `case_006` | `kdebug_commit_window.json`：`Alu_3.sv` result driver 同时包含常量 1、常量 `0x1388`、`_T_0` 和 `issueTime` | 直接请求 `Alu_3.sv`，删除 `issueTime > 5000` 与 XOR 1，恢复 `_T_0` 直通，PASS。 | 多次复述 `1/0x1388/issueTime`，但持续假设不存在的端口和 assignment 上下文，未形成可应用补丁，TIMEOUT。 |
+| `case_007` | `kdebug_control_first_divergence.json`：`rfWen` driver 包含 0、`0x3e8`、原始 `rfWen` 和 `issueTime`，位于 `Alu_3.sv` | 直接恢复原始 `rfWen` 直通，移除 timestamp 条件，PASS。 | 正确判断 performance timestamp 不应控制 architectural write enable，但 diff 混入虚构模块/占位符，未落地，TIMEOUT。 |
+| `case_008` | `kdebug_lsu_first_bad_load.json`：`NewLoadUnit.sv:758` 的 load output driver 包含常量 1、shift/extend data 和 load valid | 请求目标文件后删除 valid 条件下的 XOR 1，恢复 load data 直通，PASS。 | 将 driver 与 `0x1a -> 0x1b` LSB 翻转对应，读取目标 assignment 后给出相同修复，PASS。 |
+| `case_009` | `kdebug_redirect_pc_divergence.json`：`BranchUnit.sv:79` target driver 包含常量 2、`_addModule_io_target` 和 redirect valid | 直接删除 short/full target 两处 XOR 2，PASS。 | 看到了 redirect 异常，却忽略证据中的 BranchUnit 常量 2，转而修改 `AddModule.sv` 的普通加法；TIMEOUT。 |
+| `case_010` | `kdebug_tlb_cache_refill.json`：只追到正常 `NewLoadUnit` load output；没有到达实际注错的 `Alu_3.sv` | 按错误证据检查 LoadUnit、DMAC、UART 和 bypass，32 轮从未检查 `Alu_3.sv`，TIMEOUT。 | 被同一证据锚定到 NewLoadUnit，并反复输出不存在的 Scala/Chisel 上下文，TIMEOUT。 |
+| `case_011` | `kdebug_runtime_observation.json`：`difftest_exit` 仅由常量 0 驱动 | 将其作为 Difftest 未启动的佐证；决定性证据来自 run log 的 `NEMU_HOME` FATAL，建立本地参考模型路径后 PASS。 | 同样识别 Difftest 未启动及 `NEMU_HOME` 问题，但目录和 symlink 修复未正确落地，TIMEOUT。 |
+| `case_012` | `kdebug_runtime_observation.json`：`addr_q <- bus.req_addr` | 只把 trace 当作 RTL 结构未断线的辅助证据；通过 config、日志和 judge 对照修复错误 UVM case，PASS。 | 使用同一结构证据排除明显 RTL 断线，直接从配置不一致修正 `BENCH_CASE`，PASS。 |
+| `case_013` | `kdebug_runtime_observation.json`：`difftest_exit = 0` | 结合 stale simulator 日志和配置，确认真实 simv 未执行并恢复 `SIMV=./simv`，PASS。 | 作出相同判断并完成同一单行配置修复，PASS。 |
+| `case_014` | `kdebug_rtl_observation.json`：`eff_mask_q <- mask_q/0/ff`；runtime JSON：`addr_q <- bus.req_addr` | 用 mask trace 复用 `case_003` 的 signal-to-port 推理，同时从 config 修正 case dispatch，PASS。 | 先过度解读地址 trace 并错误缩窄 RAM 地址；重启后已识别 `& 8'hfe` 和错误 `BENCH_CASE`，但补丁无法应用，TIMEOUT。 |
+| `case_015` | RTL JSON：BranchUnit target driver 的常量 2、target、valid；runtime JSON：`difftest_exit=0` | 用常量 2 证据修复两处 redirect XOR，再结合运行日志补齐 Difftest 环境，PASS。 | 看到了 BranchUnit 常量 2 和空 `DIFF_ARG`，但 RTL assignment 与环境 diff 都未匹配真实文件，TIMEOUT。 |
+| `case_016` | RTL JSON 错追正常 `NewLoadUnit` output；runtime JSON 仅显示 `difftest_exit=0` | 被错误 RTL evidence 引向 LoadUnit/DMAC，且没有直接修复 `RUN_TIMEOUT_SEC=1`，TIMEOUT。 | 从配置而非 KDebug 发现并修正一秒 timeout，但 RTL 仍被错误 evidence 锚定到 NewLoadUnit，TIMEOUT。 |
+
+因此，“两个模型拿到相同 manifest”不等于“两个模型从中提取了相同信息”。GPT 对明确文件、
+行号和注错常量的利用率更高；Qwen 在 `case_002/005/007` 已有正确诊断，却主要失败在 diff
+构造与重复重试，在 `case_009` 则是没有优先处理证据中的直接注错常量。
+
+## 10. 与历史 `without_kdebug` 逐 Case 对照
+
+历史基线来自已归档并上传的
+`benchmark_results/kdebug_xiangshan_v2_run_20260630_025641_20260704_qwen_final/results.csv`。
+表中“当前”是本报告最新真实 KDebug 工具组，“历史无工具”是旧轮 `without_kdebug`。
+
+| Case | GPT 当前 KDebug | GPT 历史无工具 | GPT 终态观察 | Qwen 当前 KDebug | Qwen 历史无工具 | Qwen 终态观察 |
+|---|---|---|---|---|---|---|
+| `case_001` | PASS, 30.961s, 1 iter | PASS, 22.338s, 1 iter | 同为 PASS | PASS, 50.628s, 2 iter | PASS, 16.205s, 1 iter | 同为 PASS |
+| `case_002` | PASS, 35.789s, 1 iter | PASS, 214.690s, 7 iter | 同为 PASS；少 6 iter | TIMEOUT, 3600s, 464 iter | TIMEOUT, 3605.724s, 447 iter | 同为 TIMEOUT |
+| `case_003` | PASS, 28.261s, 1 iter | PASS, 20.821s, 1 iter | 同为 PASS | PASS, 73.124s, 1 iter | TIMEOUT, 3602s, 209 iter | **终态改善** |
+| `case_004` | PASS, 25.893s, 1 iter | PASS, 432.426s, 28 iter | 同为 PASS；少 27 iter | PASS, 350.293s, 2 iter | PASS, 18.279s, 1 iter | 同为 PASS |
+| `case_005` | PASS, 36.011s, 1 iter | PASS, 69.985s, 2 iter | 同为 PASS；少 1 iter | TIMEOUT, 3600s, 620 iter | TIMEOUT, 3600s, 220 iter | 同为 TIMEOUT |
+| `case_006` | PASS, 2650.923s, 2 iter | TIMEOUT, 9395.394s, 74 iter | **终态改善** | TIMEOUT, 3599.509s, 436 iter | TIMEOUT, 3599.572s, 20 iter | 同为 TIMEOUT |
+| `case_007` | PASS, 205.795s, 2 iter | TIMEOUT, 3603.448s, 17 iter | **终态改善** | TIMEOUT, 3600s, 142 iter | TIMEOUT, 3601.631s, 243 iter | 同为 TIMEOUT |
+| `case_008` | PASS, 212.067s, 2 iter | TIMEOUT, 3599.911s, 37 iter | **终态改善** | PASS, 224.138s, 2 iter | TIMEOUT, 3614.927s, 177 iter | **终态改善** |
+| `case_009` | PASS, 261.057s, 2 iter | PASS, 278.159s, 2 iter | 同为 PASS | TIMEOUT, 3600s, 343 iter | TIMEOUT, 3608.197s, 260 iter | 同为 TIMEOUT |
+| `case_010` | TIMEOUT, 3600s, 32 iter | TIMEOUT, 3687.995s, 11 iter | 同为 TIMEOUT | TIMEOUT, 3599.574s, 272 iter | TIMEOUT, 3599.250s, 177 iter | 同为 TIMEOUT |
+| `case_011` | PASS, 49.820s, 1 iter | PASS, 295.059s, 10 iter | 同为 PASS；少 9 iter | TIMEOUT, 3600s, 488 iter | PASS, 34.958s, 4 iter | **终态回退** |
+| `case_012` | PASS, 41.625s, 2 iter | PASS, 37.196s, 2 iter | 同为 PASS | PASS, 21.179s, 1 iter | PASS, 7.858s, 1 iter | 同为 PASS |
+| `case_013` | PASS, 13.016s, 1 iter | PASS, 8.696s, 1 iter | 同为 PASS | PASS, 9.830s, 1 iter | PASS, 6.215s, 1 iter | 同为 PASS |
+| `case_014` | PASS, 31.076s, 1 iter | PASS, 149.270s, 2 iter | 同为 PASS；少 1 iter | TIMEOUT, 3599.280s, 112 iter | TIMEOUT, 3610.974s, 298 iter | 同为 TIMEOUT |
+| `case_015` | PASS, 657.539s, 4 iter | PASS, 276.202s, 3 iter | 同为 PASS | TIMEOUT, 3599.274s, 229 iter | TIMEOUT, 3599.476s, 467 iter | 同为 TIMEOUT |
+| `case_016` | TIMEOUT, 3600s, 29 iter | TIMEOUT, 3601.672s, 14 iter | 同为 TIMEOUT | TIMEOUT, 3599.124s, 254 iter | TIMEOUT, 3600s, 15 iter | 同为 TIMEOUT |
+
+整体终态对照如下：
+
+| 模型 | 最新真实 KDebug 组 | 历史无工具组 | PASS 数变化 |
+|---|---:|---:|---:|
+| GPT-5.5 | 14 PASS / 2 TIMEOUT | 11 PASS / 5 TIMEOUT | +3 |
+| Qwen3.6-35B | 6 PASS / 10 TIMEOUT | 5 PASS / 11 TIMEOUT | +1 |
+| 合计 | 20 PASS / 12 TIMEOUT | 16 PASS / 16 TIMEOUT | +4 |
+
+### 10.1 对照限制
+
+1. 这不是同一时间、同一 runner 版本下的随机化 A/B。最新轮只运行了工具组；无工具数据来自
+   历史 suite。
+2. 两轮之间升级了真实 KDebug manifest 门禁、模型提示、补丁应用、`RETRY_LATER` 归档和
+   3600 秒累计预算聚合。API 服务状态和 VM 资源状态也可能不同。
+3. 因而 `case_006/007/008` 的 GPT 终态改善及 `case_003/008` 的 Qwen 终态改善，与强 KDebug
+   证据的利用链一致，但不能单独证明这些 PASS 全部由 KDebug 导致。
+4. Qwen `case_011` 的回退说明跨轮次噪声真实存在：当前轮虽然有 KDebug 佐证，模型仍因环境
+   补丁无法落地而 TIMEOUT，历史无工具轮则 PASS。
+5. `case_010/016` 的采集 plan 指向错误 RTL，`case_011-016` 又包含环境注错或标签错位，
+   不适合作为工具因果效果的核心样本。
+
+下一轮若要量化 KDebug 的净增益，应在同一 runner、同一模型 endpoint、同一 VM 快照和相同
+3600 秒预算下同时运行 `with_kdebug` 与 `without_kdebug`，并保持除 evidence 注入外的输入完全一致。
