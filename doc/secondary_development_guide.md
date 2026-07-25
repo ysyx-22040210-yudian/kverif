@@ -900,6 +900,193 @@ KDEBUG=/home/host/kverif/tools/kdebug
 
 再把 schema 中的 `target`、`args`、`limits` 和 `output` 字段分别映射为对应通用参数。仓库内的 `kdebug/examples/requests/` 还提供可回放的复杂 action request。
 
+#### 10.2.1 Verdi 2018 NPI 独立 action
+
+下面这些 action 对应 NPI O-2018.09-SP2 能力矩阵中的独立任务。它们都通过
+`kdebug/tcl_engine/kdebug_npi.tcl` 调用 Tcl NPI；C++ public CLI 和 Python engine
+只负责参数校验、临时计划文件和 JSON response，不直接链接 NPI。当前状态为
+`experimental`，二次开发脚本应在部署阶段查询 `actions` 和 request schema 后再启用。
+
+| action | 资源 | 必需 `args` | 可选 `args` | 主要结果 |
+| --- | --- | --- | --- | --- |
+| `npi.capabilities` | 无 | 无 | 无 | 逐域列出 Verdi 当前实际注册的 NPI Tcl command |
+| `netlist.resolve` | `--daidir` | `name` | `object_type=npiNl*` | flattened netlist 对象固定属性 |
+| `netlist.iterate` | `--daidir` | `object_type=npiNl*` | `name`、`--limit max_rows=N` | 某 reference 下的网表对象列表；`name` 为空且 type 为 `npiNlInst` 时列 top instance |
+| `text.line` | `--daidir` | `file`、`line` | 无 | NPI Text Model 行内容和 word 数 |
+| `text.words` | `--daidir` | `file`、`line` | `--limit max_rows=N` | word、序号和 Text Word Attribute |
+| `text.replace_line` | `--daidir` | `file`、`line`、`content`、`output` | `overwrite=true` | 修改后的源码副本；禁止原地覆盖输入源文件 |
+| `dm.add_net` | `--daidir` | `module`、`name`、`output_dir` | `net_type`、`packed_left/right`、`overwrite` | DM 修改后的设计目录 |
+| `dm.clone_module` | `--daidir` | `module`、`new_name`、`output_dir` | `overwrite` | clone module 和 DM writer 输出目录 |
+| `vcs.summary` | `--daidir` | 无 | `database` 可覆盖 target | VCS 编译 warning/error、设计统计和仿真统计 |
+| `power.resolve` | 含 Power Model 的 `--daidir`，或 `target.filelist+upf` | `name` | `object_type=npiPw*` | Power Model 对象固定属性 |
+| `power.list` | 含 Power Model 的 `--daidir`，或 `target.filelist+upf` | `name`、`object_type=npiPw*` | `--limit max_rows=N` | Power Model 一对多关系列表 |
+| `crdb.resolve` | 无 | `crdb`、`name` | `level=RTL/GATE` | CRDB 对象固定属性 |
+| `crdb.correlates` | 无 | `crdb`、`name` | `level`、`--limit max_rows=N` | RTL/GATE correlated object 列表 |
+| `transaction.writer.create` | 无 | `output`、`stream`、`transactions` | `unit`、`begin_time`、`relations`、`overwrite` | 完整关闭的 transaction FSDB、计数和结束时间 |
+| `fsdb.writer.create_scope` | 无 | `output`，以及 `operations` 或 `scopes` | `unit`、`begin_time`、`end_time_delta`、`overwrite` | 完整关闭的 signal FSDB scope 层次 |
+
+固定属性是有意的：二次开发者不能把任意 NPI property 或 Tcl 片段塞进 action。这样可以
+稳定 schema、限制输出规模，并避免把项目字符串变成 `eval`。确实需要新属性时，应新增并
+评审字段，而不是增加 `property=<任意枚举>` 后门。
+
+Power action 支持两种设计输入。已有 VCS Power database 时使用 `--daidir`；只有 RTL 和
+UPF 时使用下面的受控 source target。source target 由 Python 转成 Verdi argv，不会拼 shell，
+也不会执行调用方 Tcl。
+
+| `--target` 字段 | 类型 | 含义 | 示例 |
+| --- | --- | --- | --- |
+| `filelist` | 非空字符串 | Verdi `-f` 文件；存在该字段时使用源码加载模式 | `/data/power/run.f` |
+| `upf` | 非空字符串 | UPF 文件；映射为 `-upf` 或 `-upf2.0` | `/data/power/demo.upf` |
+| `workdir` | 非空字符串 | 解析 filelist 内相对路径的工作目录；默认是 filelist 所在目录 | `/data/power` |
+| `defines` | 字符串或字符串数组 | 映射为独立的 `+define+...` argv | `["NOVAS_UPF_PKG"]` |
+| `top` | 非空字符串 | 可选 Verdi `-top` | `system` |
+| `upf_version` | `1.0` 或 `2.0` | 默认 `2.0` | `2.0` |
+
+**只读 action 示例**
+
+```bash
+KDEBUG=/home/host/kverif/tools/kdebug
+DAIDIR=/data/build/simv.daidir
+
+"$KDEBUG" --json action npi.capabilities
+
+"$KDEBUG" --json action netlist.resolve --daidir "$DAIDIR" \
+  --arg name=top.u_dut.ready --arg object_type=npiNlNet
+
+"$KDEBUG" --json action netlist.iterate --daidir "$DAIDIR" \
+  --arg name=top.u_dut --arg object_type=npiNlNet --limit max_rows=200
+
+"$KDEBUG" --json action text.line --daidir "$DAIDIR" \
+  --arg file=/data/project/rtl/top.sv --arg line=127
+
+"$KDEBUG" --json action text.words --daidir "$DAIDIR" \
+  --arg file=/data/project/rtl/top.sv --arg line=127 --limit max_rows=100
+
+"$KDEBUG" --json action vcs.summary --daidir "$DAIDIR"
+
+"$KDEBUG" --json action power.resolve --daidir /data/build/power_simv.daidir \
+  --arg name=top/PD_TOP --arg object_type=npiPwPowerDomain
+
+"$KDEBUG" --json action power.list --daidir /data/build/power_simv.daidir \
+  --arg name=top/PD_TOP --arg object_type=npiPwElement --limit max_rows=100
+
+# 不依赖预生成 daidir，直接按 Verdi 官方 RTL+UPF 方式加载。
+POWER_DIR=/data/project/power
+"$KDEBUG" --json action power.resolve \
+  --target filelist="$POWER_DIR/run.f" \
+  --target upf="$POWER_DIR/design.upf" \
+  --target workdir="$POWER_DIR" \
+  --target 'defines=["NOVAS_UPF_PKG"]' \
+  --target top=system --target upf_version=2.0 \
+  --arg name=system/PD_TOP --arg object_type=npiPwPowerDomain
+
+"$KDEBUG" --json action crdb.resolve \
+  --arg crdb=/data/build/dut.crdb --arg name=top.u_dut.ready --arg level=RTL
+
+"$KDEBUG" --json action crdb.correlates \
+  --arg crdb=/data/build/dut.crdb --arg name=top.u_dut.ready --arg level=RTL \
+  --limit max_rows=100
+```
+
+Power action 只有在输入设计真正包含 UPF Power Model 时才有业务意义。普通 RTL daidir
+返回 `POWER_OBJECT_NOT_FOUND` 不表示 action 不可用；同理，CRDB action 必须输入由 Verdi
+`crdb` 工具生成的真实 `.crdb`，不能用普通 daidir 或 FSDB 代替。
+
+源码成功导入也不代表 Power NPI license 可用。Verdi 明确报告 feature checkout 失败时，
+KDebug 返回 `LICENSE_UNAVAILABLE`，项目脚本应把它归入 EDA 基础设施阻塞，不能改写为
+`POWER_OBJECT_NOT_FOUND` 或业务失败。VM `192.168.31.116` 当前缺少
+`PowerAwareAnalysis` feature，因此 Power 两项已经真实启动和加载 RTL+UPF，但没有被标成 PASS。
+
+2026-07-24 的 Verdi O-2018.09-SP2 普通用户实测结果如下。原始机器结果位于
+`kdebug/tests/vm/npi_actions/evidence/`。
+
+| 状态 | action |
+| --- | --- |
+| PASS | `npi.capabilities`、`netlist.resolve`、`netlist.iterate` |
+| PASS | `text.line`、`text.words`、`text.replace_line` |
+| PASS | `dm.add_net`、`dm.clone_module`、`vcs.summary` |
+| PASS | `transaction.writer.create`、`fsdb.writer.create_scope` |
+| PASS | `crdb.resolve`、`crdb.correlates` |
+| LICENSE BLOCKED | `power.resolve`、`power.list`（缺少 `PowerAwareAnalysis`） |
+
+**受控修改和 writer 示例**
+
+```bash
+OUT=/data/reports/npi-actions
+mkdir -p "$OUT"
+
+# 只写新副本，不允许 output 和输入源码相同。
+"$KDEBUG" --json action text.replace_line --daidir "$DAIDIR" \
+  --arg file=/data/project/rtl/top.sv --arg line=127 \
+  --arg 'content=  assign ready = valid && enable;' \
+  --arg output="$OUT/top.patched.sv"
+
+# 第一次输出目录必须不存在；明确 overwrite=true 才可更新已有目录。
+"$KDEBUG" --json action dm.add_net --daidir "$DAIDIR" \
+  --arg module=top --arg name=debug_bus --arg net_type=npiDmNetWire \
+  --arg packed_left=7 --arg packed_right=0 \
+  --arg output_dir="$OUT/dm-add-net"
+
+"$KDEBUG" --json action dm.clone_module --daidir "$DAIDIR" \
+  --arg module=alu --arg new_name=alu_debug \
+  --arg output_dir="$OUT/dm-clone"
+
+# 数组值作为一个 argv 传入；外层单引号由 shell 保护，内部仍是合法 JSON。
+"$KDEBUG" --json action transaction.writer.create \
+  --arg output="$OUT/transactions.fsdb" --arg unit=1ns \
+  --arg begin_time=0 --arg stream=bus.requests \
+  --arg 'transactions=[
+    {"start_delta":10,"duration":20,"type":"npiFsdbwTransTransaction","label":"req0","tags":["read"]},
+    {"start_delta":5,"duration":10,"type":"npiFsdbwTransTransaction","label":"rsp0"}
+  ]' \
+  --arg 'relations=[
+    {"relation":"npiFsdbwRelParentChild","master":0,"slave":1}
+  ]'
+
+"$KDEBUG" --json action fsdb.writer.create_scope \
+  --arg output="$OUT/hierarchy.fsdb" --arg unit=1ns \
+  --arg begin_time=0 --arg end_time_delta=100 \
+  --arg 'operations=[
+    {"op":"scope","type":"npiFsdbScopeSvModule","name":"top"},
+    {"op":"scope","type":"npiFsdbScopeSvModule","name":"u_a"},
+    {"op":"up"},
+    {"op":"scope","type":"npiFsdbScopeSvModule","name":"u_b"}
+  ]'
+```
+
+writer 不接受调用方提供的 Tcl。Python engine 会检查数组、整数、enum 前缀和 transaction
+索引，再生成只包含固定列的临时 TSV；Tcl 读取计划后调用 O-2018.09-SP2 NPI。输出已存在
+时默认返回 `OUTPUT_EXISTS`，不会静默覆盖；只有显式传 `--arg overwrite=true` 才会替换。
+writer 中途失败会关闭 NPI handle 并删除本次不完整 FSDB。
+
+**在脚本内消费结果并形成新结论**
+
+```bash
+RESULT=/data/reports/netlist-ready.json
+"$KDEBUG" --json action netlist.resolve --daidir "$DAIDIR" \
+  --arg name=top.u_dut.ready --arg object_type=npiNlNet > "$RESULT"
+
+/usr/bin/python3 - "$RESULT" <<'PY'
+import json
+import sys
+
+response = json.load(open(sys.argv[1], encoding="utf-8"))
+if not response.get("ok"):
+    raise SystemExit("NPI query failed: " + (response.get("error") or {}).get("code", "UNKNOWN"))
+obj = response["data"]["object"]
+size = obj.get("size")
+conclusion = {
+    "signal": obj.get("full_name"),
+    "is_scalar_control": size == 1,
+    "conclusion": "scalar control net" if size == 1 else "vector/data net",
+}
+print(json.dumps(conclusion, ensure_ascii=False))
+PY
+```
+
+这里生成的 `is_scalar_control` 和 `conclusion` 是项目脚本基于工具事实推导出的新结论；
+KDebug response 仍应原样归档，不能只保存二次推导后的布尔值。
+
 ### 10.3 kcov：VDB coverage 查询、过滤和导出
 
 **功能和 session 行为**
@@ -1595,6 +1782,37 @@ bash $KVERIF_HOME/examples/secondary_development/sh/coverage_convergence.sh \
 ps -u host -o pid,ppid,stat,etime,cmd | \
   grep -E 'kdebug|kcov|verdi|simv|vcs' | grep -v grep || true
 ```
+
+### 13.7 Verdi 2018 NPI 独立 action 全流程
+
+以下命令必须由普通用户 `host` 执行。第二个参数是专用临时输出目录，harness 会先删除并
+重建它，不要传项目目录或已有结果目录。
+
+```bash
+id -un
+# 期望: host
+
+export KVERIF_HOME=/home/host/kverif
+bash /home/host/kverif/kdebug/tests/vm/npi_actions/run.sh \
+  /home/host/kverif_npi_action_test
+
+/usr/bin/python3 -m json.tool \
+  /home/host/kverif_npi_action_test/npi_action_vm_test_summary.json
+```
+
+harness 会执行以下真实步骤：
+
+1. 用 VCS 2018 构建带 `-kdb -Xdump_vcsdb` 的最小设计数据库。
+2. 通过公共 KDebug CLI 执行 Netlist、Text、DM 和 VCS action。
+3. 创建 transaction FSDB 和 scope hierarchy FSDB，并验证重复输出保护。
+4. 用 Verdi source mode 加载安装目录中的 RTL+UPF demo，执行两个 Power action。
+5. 用 `crdb` 创建真实 RTL/GATE correlation database，要求至少返回一个 mapping。
+6. 校验所有输出非空并写机器可读 summary。
+
+当前 VM 的期望结果为 `passed=true`、`unexpected_failures=[]`，同时
+`license_blocked_actions=["power.list","power.resolve"]`。以后许可证补齐后，这两个 action
+应直接变为 `ok=true`，无需修改 harness。仓库归档证据见
+`kdebug/tests/vm/npi_actions/evidence/vm-summary.json`。
 
 ## 14. 并发与可靠性
 
