@@ -335,11 +335,13 @@ Each suite should produce:
 results.csv
 summary.md
 screenshots/
-docx_out/gpt-5.5_benchmark_report.docx
-docx_out/glm-4.7_benchmark_report.docx
-docx_out/qwen3.6-35b_benchmark_report.docx
-docx_out/three_model_summary_report.docx
+docx_out/<actual-model>_benchmark_report.docx
+docx_out/benchmark_summary_report.docx
 ```
+
+Per-model reports are created only for models with actual rows in `results.csv`.
+The Markdown and Word summaries must identify excluded models/groups as outside
+the selected run scope; they must not label those trials as missing failures.
 
 All reports must be Chinese Word documents.  Every per-case section must include
 a terminal screenshot.  A result without screenshot evidence does not satisfy

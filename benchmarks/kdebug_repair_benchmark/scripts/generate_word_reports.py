@@ -17,8 +17,8 @@ from docx.shared import Inches, Pt, RGBColor
 
 MODELS = ["gpt-5.5", "glm-4.7", "qwen3.6-35b"]
 GROUP_LABEL = {
-    "with_kdebug": "使用 kdebug",
-    "without_kdebug": "不使用 kdebug",
+    "with_kdebug": "使用 KDebug",
+    "without_kdebug": "不使用 KDebug",
 }
 STATUS_LABEL = {
     "PASS": "通过",
@@ -88,6 +88,15 @@ def status_text(value):
     return STATUS_LABEL.get(value, value or "")
 
 
+def csv_values(value):
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def ordered_present(rows, field, preferred):
+    present = {row.get(field, "") for row in rows if row.get(field)}
+    return [item for item in preferred if item in present] + sorted(present - set(preferred))
+
+
 def setup_document(doc):
     section = doc.sections[0]
     section.top_margin = Inches(0.72)
@@ -151,6 +160,15 @@ def set_cell_margins(cell, top=80, start=110, bottom=80, end=110):
         node.set(qn("w:type"), "dxa")
 
 
+def repeat_table_header(row):
+    tr_pr = row._tr.get_or_add_trPr()
+    tbl_header = tr_pr.find(qn("w:tblHeader"))
+    if tbl_header is None:
+        tbl_header = OxmlElement("w:tblHeader")
+        tr_pr.append(tbl_header)
+    tbl_header.set(qn("w:val"), "true")
+
+
 def add_title(doc, title, subtitle=None):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -184,6 +202,7 @@ def add_table(doc, headers, rows):
         hdr[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
         set_cell_shading(hdr[i], "F2F4F7")
         set_cell_margins(hdr[i])
+    repeat_table_header(table.rows[0])
     for row in rows:
         cells = table.add_row().cells
         for i, value in enumerate(row):
@@ -242,7 +261,8 @@ def screenshot_candidates(screenshot_root, row):
 
 def add_screenshot(doc, screenshot_root, row):
     found = next((p for p in screenshot_candidates(screenshot_root, row) if p.exists()), None)
-    add_para(doc, "终端截图证据：", bold=True)
+    label = add_para(doc, "终端截图证据：", bold=True)
+    label.paragraph_format.keep_with_next = True
     if not found:
         add_para(
             doc,
@@ -253,6 +273,8 @@ def add_screenshot(doc, screenshot_root, row):
         return
     try:
         doc.add_picture(str(found), width=Inches(6.65))
+        picture_paragraph = doc.paragraphs[-1]
+        picture_paragraph.paragraph_format.keep_with_next = True
         cap = doc.add_paragraph()
         cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = cap.add_run(str(found))
@@ -314,8 +336,29 @@ def trial_detail_rows(row):
     ]
 
 
-def add_protocol_section(doc):
-    doc.add_heading("一、测试口径", level=1)
+def add_protocol_section(doc, rows, models, groups, skipped_models, excluded_groups, scope_note):
+    doc.add_heading("一、测试范围与口径", level=1)
+    add_para(
+        doc,
+        f"实际模型：{', '.join(models)}；实际工具组："
+        f"{', '.join(GROUP_LABEL.get(group, group) for group in groups)}；有效任务：{len(rows)}。",
+    )
+    if skipped_models:
+        add_para(
+            doc,
+            f"未运行模型：{', '.join(skipped_models)}。这些模型按本轮用户指定的运行范围跳过，不纳入统计。",
+            bold=True,
+        )
+    if excluded_groups:
+        add_para(
+            doc,
+            "未运行工具组："
+            + ", ".join(GROUP_LABEL.get(group, group) for group in excluded_groups)
+            + "。按本轮用户指定的运行范围不执行，没有生成结果，不应解读为缺失或失败。",
+            bold=True,
+        )
+    if scope_note:
+        add_para(doc, scope_note, bold=True, color=(31, 78, 121))
     add_para(
         doc,
         "每个 case、每个模型、每个工具组最多 3600 秒。只有模型修改允许范围内的 RTL 或环境文件，"
@@ -355,13 +398,18 @@ def summary_headers(prefix):
     ]
 
 
-def generate_model_report(rows, model, out_path, screenshot_root):
+def generate_model_report(
+    rows, model, out_path, screenshot_root, groups, skipped_models, excluded_groups, scope_note
+):
     doc = Document()
     setup_document(doc)
-    add_title(doc, f"{model} XiangShan Debug Benchmark 报告", "with kdebug / without kdebug repair loop 对比")
-    add_protocol_section(doc)
+    group_text = " / ".join(GROUP_LABEL.get(group, group) for group in groups)
+    add_title(doc, f"{model} XiangShan Debug Benchmark 报告", f"本轮工具组：{group_text}")
 
     model_rows = [r for r in rows if r.get("model_id") == model]
+    add_protocol_section(
+        doc, model_rows, [model], groups, skipped_models, excluded_groups, scope_note
+    )
     doc.add_heading("二、模型汇总", level=1)
     add_table(doc, summary_headers(["工具组"]), grouped_summary_rows(model_rows, ["group"]))
 
@@ -388,11 +436,19 @@ def missing_screenshots(rows, screenshot_root):
     return missing
 
 
-def generate_summary_report(rows, out_path, screenshot_root):
+def generate_summary_report(
+    rows, out_path, screenshot_root, models, groups, skipped_models, excluded_groups, scope_note
+):
     doc = Document()
     setup_document(doc)
-    add_title(doc, "三模型 XiangShan Debug Benchmark 汇总报告", "gpt-5.5 / glm-4.7 / qwen3.6-35b")
-    add_protocol_section(doc)
+    add_title(
+        doc,
+        "KDebug XiangShan Benchmark 汇总报告",
+        " / ".join(models) + " | " + " / ".join(GROUP_LABEL.get(group, group) for group in groups),
+    )
+    add_protocol_section(
+        doc, rows, models, groups, skipped_models, excluded_groups, scope_note
+    )
 
     doc.add_heading("二、总体结果", level=1)
     add_table(doc, summary_headers(["模型", "工具组"]), grouped_summary_rows(rows, ["model_id", "group"]))
@@ -408,17 +464,26 @@ def generate_summary_report(rows, out_path, screenshot_root):
     compare_rows = []
     for case_id in sorted({r.get("case_id", "") for r in rows if r.get("case_id")}):
         first = next(r for r in rows if r.get("case_id") == case_id)
-        for model in MODELS:
+        for model in models:
+            model_rows = [
+                row for row in rows
+                if row.get("case_id") == case_id and row.get("model_id") == model
+            ]
+            if not model_rows:
+                continue
             compare_rows.append([
                 case_id,
                 bug_domain_text(first),
                 layer_text(first),
                 first.get("subsystem", ""),
                 model,
-                result_brief(index.get((case_id, model, "with_kdebug"))),
-                result_brief(index.get((case_id, model, "without_kdebug"))),
-            ])
-    add_table(doc, ["Case", "注错域", "Benchmark 层级", "子系统", "模型", "使用 kdebug", "不使用 kdebug"], compare_rows)
+            ] + [result_brief(index.get((case_id, model, group))) for group in groups])
+    add_table(
+        doc,
+        ["Case", "注错域", "Benchmark 层级", "子系统", "模型"]
+        + [GROUP_LABEL.get(group, group) for group in groups],
+        compare_rows,
+    )
 
     doc.add_heading("六、截图完整性", level=1)
     missing = missing_screenshots(rows, screenshot_root)
@@ -438,13 +503,53 @@ def main():
     parser.add_argument("--screenshots", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--require-screenshots", action="store_true")
+    parser.add_argument("--models", default="", help="Comma-separated models selected for this run")
+    parser.add_argument("--groups", default="", help="Comma-separated groups selected for this run")
+    parser.add_argument("--skipped-models", default="")
+    parser.add_argument("--excluded-groups", default="")
+    parser.add_argument("--scope-note", default="")
     args = parser.parse_args()
 
     rows = read_rows(args.results)
+    selected_models = csv_values(args.models)
+    selected_groups = csv_values(args.groups)
+    models = ordered_present(rows, "model_id", selected_models or MODELS)
+    groups = ordered_present(rows, "group", selected_groups or list(GROUP_LABEL))
+    skipped_models = csv_values(args.skipped_models)
+    excluded_groups = csv_values(args.excluded_groups)
+    if selected_models and not skipped_models:
+        skipped_models = [model for model in MODELS if model not in selected_models]
+    if selected_groups and not excluded_groups:
+        excluded_groups = [group for group in GROUP_LABEL if group not in selected_groups]
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    for model in MODELS:
-        generate_model_report(rows, model, args.out_dir / f"{model}_benchmark_report.docx", args.screenshots)
-    generate_summary_report(rows, args.out_dir / "three_model_summary_report.docx", args.screenshots)
+    for stale_model in set(MODELS) - set(models):
+        stale_path = args.out_dir / f"{stale_model}_benchmark_report.docx"
+        if stale_path.exists():
+            stale_path.unlink()
+    legacy_summary = args.out_dir / "three_model_summary_report.docx"
+    if legacy_summary.exists():
+        legacy_summary.unlink()
+    for model in models:
+        generate_model_report(
+            rows,
+            model,
+            args.out_dir / f"{model}_benchmark_report.docx",
+            args.screenshots,
+            groups,
+            skipped_models,
+            excluded_groups,
+            args.scope_note,
+        )
+    generate_summary_report(
+        rows,
+        args.out_dir / "benchmark_summary_report.docx",
+        args.screenshots,
+        models,
+        groups,
+        skipped_models,
+        excluded_groups,
+        args.scope_note,
+    )
     if args.require_screenshots:
         missing = missing_screenshots(rows, args.screenshots)
         if missing:

@@ -375,9 +375,13 @@ done
   --results "$results_csv" \
   --screenshots "$screenshot_dir" \
   --out-dir "$docx_dir" \
+  --models "$models_csv" \
+  --groups "$groups_csv" \
   --require-screenshots
 
 "$python_bin" "$bench_root/scripts/summarize_results.py" "$results_csv" \
+  --models "$models_csv" \
+  --groups "$groups_csv" \
   --out "$suite_root/summary.md"
 
 echo "RESULTS: $results_csv"

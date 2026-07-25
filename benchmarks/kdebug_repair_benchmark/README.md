@@ -395,8 +395,10 @@ Expected outputs:
 results.csv
 summary.md
 screenshots/
-docx_out/gpt-5.5_benchmark_report.docx
-docx_out/glm-4.7_benchmark_report.docx
-docx_out/qwen3.6-35b_benchmark_report.docx
-docx_out/three_model_summary_report.docx
+docx_out/<actual-model>_benchmark_report.docx
+docx_out/benchmark_summary_report.docx
 ```
+
+Reports are generated only for models and groups present in the selected run.
+Unselected models/groups are recorded as outside the run scope, rather than as
+missing or failed trials.

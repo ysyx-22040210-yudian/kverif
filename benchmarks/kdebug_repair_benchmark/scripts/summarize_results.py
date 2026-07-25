@@ -11,8 +11,8 @@ from pathlib import Path
 MODELS = ["gpt-5.5", "glm-4.7", "qwen3.6-35b"]
 GROUPS = ["with_kdebug", "without_kdebug"]
 GROUP_LABEL = {
-    "with_kdebug": "使用 kdebug",
-    "without_kdebug": "不使用 kdebug",
+    "with_kdebug": "使用 KDebug",
+    "without_kdebug": "不使用 KDebug",
 }
 STATUS_LABEL = {
     "PASS": "通过",
@@ -41,6 +41,15 @@ def median(values):
 
 def status_text(value):
     return STATUS_LABEL.get(value, value or "")
+
+
+def csv_values(value):
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def ordered_present(rows, field, preferred):
+    present = {row.get(field, "") for row in rows if row.get(field)}
+    return [item for item in preferred if item in present] + sorted(present - set(preferred))
 
 
 def summarize(rows):
@@ -130,13 +139,46 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("results_csv", type=Path)
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--models", default="", help="Comma-separated models selected for this run")
+    parser.add_argument("--groups", default="", help="Comma-separated groups selected for this run")
+    parser.add_argument("--skipped-models", default="")
+    parser.add_argument("--excluded-groups", default="")
+    parser.add_argument("--scope-note", default="")
     args = parser.parse_args()
 
     rows = list(csv.DictReader(args.results_csv.open(newline="", encoding="utf-8")))
+    selected_models = csv_values(args.models)
+    selected_groups = csv_values(args.groups)
+    models = ordered_present(rows, "model_id", selected_models or MODELS)
+    groups = ordered_present(rows, "group", selected_groups or GROUPS)
+    skipped_models = csv_values(args.skipped_models)
+    excluded_groups = csv_values(args.excluded_groups)
+    if selected_models and not skipped_models:
+        skipped_models = [model for model in MODELS if model not in selected_models]
+    if selected_groups and not excluded_groups:
+        excluded_groups = [group for group in GROUPS if group not in selected_groups]
 
     lines = [
         "# KDebug XiangShan Benchmark 汇总",
         "",
+        "## 本次运行范围",
+        "",
+        f"- 实际模型：{', '.join(models)}。",
+        f"- 实际工具组：{', '.join(GROUP_LABEL.get(group, group) for group in groups)}。",
+        f"- 有效结果：{len(rows)} 个 model/group/case 任务。",
+    ]
+    if skipped_models:
+        lines.append(
+            f"- 未运行模型：{', '.join(skipped_models)}；按本轮用户指定的运行范围跳过，不纳入统计。"
+        )
+    if excluded_groups:
+        lines.append(
+            f"- 未运行工具组：{', '.join(GROUP_LABEL.get(group, group) for group in excluded_groups)}；"
+            "按本轮用户指定的运行范围不执行，没有生成结果，不应解读为缺失或失败。"
+        )
+    if args.scope_note:
+        lines.append(f"- 说明：{args.scope_note}")
+    lines.extend([
         (
             "本汇总按模型、工具组、bug 域和 benchmark 层级统计。"
             "`no_patch`、`build_fail`、`run_fail`、`judge_fail` 只作为 repair loop 的中间反馈；"
@@ -146,7 +188,7 @@ def main():
             "runner 崩溃、脚本兼容性等仍属于基础设施问题，不计入有效模型失败率。"
         ),
         "",
-    ]
+    ])
 
     add_summary_table(lines, "模型与工具组", rows, ["model_id", "group"])
     add_summary_table(lines, "按 bug 域拆分", rows, ["bug_domain", "model_id", "group"])
@@ -154,12 +196,15 @@ def main():
 
     lines.append("## 逐 Case 结果")
     lines.append("")
-    lines.append("| Case | Bug 域 | 层级 | 子系统 | 模型 | 使用 kdebug | 不使用 kdebug |")
-    lines.append("|---|---|---|---|---|---|---|")
+    detail_headers = ["Case", "Bug 域", "层级", "子系统", "模型"] + [
+        GROUP_LABEL.get(group, group) for group in groups
+    ]
+    lines.append("| " + " | ".join(detail_headers) + " |")
+    lines.append("|" + "|".join(["---"] * len(detail_headers)) + "|")
 
     case_ids = sorted({r.get("case_id", "") for r in rows if r.get("case_id")})
     for case_id in case_ids:
-        for model in MODELS:
+        for model in models:
             case_rows = [
                 r for r in rows
                 if r.get("case_id") == case_id and r.get("model_id") == model
@@ -168,13 +213,14 @@ def main():
                 continue
             first = case_rows[0]
             by_group = {r.get("group"): r for r in case_rows}
-            lines.append(
-                f"| {case_id} | {first.get('bug_domain','')} | "
-                f"{first.get('benchmark_layer','') or first.get('layer','')} | "
-                f"{first.get('subsystem','')} | {model} | "
-                f"{trial_cell(by_group.get('with_kdebug'))} | "
-                f"{trial_cell(by_group.get('without_kdebug'))} |"
-            )
+            cells = [
+                case_id,
+                first.get("bug_domain", ""),
+                first.get("benchmark_layer", "") or first.get("layer", ""),
+                first.get("subsystem", ""),
+                model,
+            ] + [trial_cell(by_group.get(group)) for group in groups]
+            lines.append("| " + " | ".join(cells) + " |")
 
     text = "\n".join(lines) + "\n"
     if args.out:
