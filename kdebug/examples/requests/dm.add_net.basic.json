@@ -1,0 +1,16 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "dm.add_net",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "module": "top",
+    "name": "debug_bus",
+    "net_type": "npiDmNetWire",
+    "packed_left": 7,
+    "packed_right": 0,
+    "output_dir": "/data/out/dm_add_net",
+    "overwrite": false
+  }
+}

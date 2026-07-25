@@ -444,7 +444,8 @@ def classify_verdi_no_response(stdout, stderr, exit_code):
             "stdout": (stdout or "")[-4000:],
             "stderr": (stderr or "")[-4000:],
         }
-    if "cannot open" in text and "read access" in text:
+    access_text = "\n".join(line for line in text.splitlines() if "novas.conf" not in line)
+    if "cannot open" in access_text and "read access" in access_text:
         return {
             "code": "DESIGN_DB_ACCESS_FAILED",
             "message": "Verdi could not read one or more design database files",
@@ -461,8 +462,71 @@ def classify_verdi_no_response(stdout, stderr, exit_code):
     }
 
 
-def design_args_for_target(target):
+def classify_verdi_license_error(stdout, stderr, exit_code):
+    text = (stdout or "") + "\n" + (stderr or "")
+    lowered = text.lower()
+    markers = (
+        "failed to check out features",
+        "failed to obtain license",
+        "does not exist in the license file",
+        "licensed number of users already reached",
+    )
+    if not any(marker in lowered for marker in markers):
+        return None
+    match = re.search(r"failed to check out features?\s+([^,\n]+)", text, re.IGNORECASE)
+    feature = match.group(1).strip() if match else ""
+    message = "required Synopsys license feature is unavailable"
+    if feature:
+        message += ": %s" % feature
+    return {
+        "code": "LICENSE_UNAVAILABLE",
+        "message": message,
+        "feature": feature,
+        "exit_code": exit_code,
+        "stdout": (stdout or "")[-4000:],
+        "stderr": (stderr or "")[-4000:],
+    }
+
+
+STANDALONE_TCL_ACTIONS = {
+    "npi.capabilities",
+    "vcs.summary",
+    "crdb.resolve",
+    "crdb.correlates",
+    "transaction.writer.create",
+    "fsdb.writer.create_scope",
+}
+
+
+def design_args_for_target(target, action=""):
     args = []
+    if action in STANDALONE_TCL_ACTIONS:
+        return args
+    filelist = normalized_path(target.get("filelist"))
+    if filelist:
+        if not os.path.isfile(filelist):
+            raise ValueError("target.filelist does not exist: %s" % filelist)
+        defines = target.get("defines", [])
+        if isinstance(defines, str):
+            defines = [defines]
+        if not isinstance(defines, list) or any(
+            not isinstance(item, str) or not item for item in defines
+        ):
+            raise ValueError("target.defines must be a string or an array of non-empty strings")
+        args.extend("+define+%s" % item for item in defines)
+        args.extend(["-sv", "-f", filelist])
+        upf = normalized_path(target.get("upf"))
+        if upf:
+            if not os.path.isfile(upf):
+                raise ValueError("target.upf does not exist: %s" % upf)
+            upf_version = str(target.get("upf_version", "2.0"))
+            if upf_version not in ("1.0", "2.0"):
+                raise ValueError("target.upf_version must be 1.0 or 2.0")
+            args.extend(["-upf2.0" if upf_version == "2.0" else "-upf", upf])
+        top = target.get("top")
+        if top:
+            args.extend(["-top", str(top)])
+        return args
     daidir = target.get("daidir") or target.get("dbdir")
     fsdb = target.get("fsdb")
     if daidir:
@@ -470,6 +534,157 @@ def design_args_for_target(target):
     if fsdb and daidir:
         args.extend(["-ssf", fsdb])
     return args
+
+
+def design_workdir_for_target(target, action, fallback):
+    if action in STANDALONE_TCL_ACTIONS or not target.get("filelist"):
+        return fallback
+    workdir = normalized_path(target.get("workdir"))
+    if not workdir:
+        workdir = os.path.dirname(normalized_path(target.get("filelist")))
+    if not os.path.isdir(workdir):
+        raise ValueError("target.workdir does not exist: %s" % workdir)
+    return workdir
+
+
+def bool_arg(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def normalized_path(value):
+    if value is None or str(value) == "":
+        return ""
+    return os.path.abspath(os.path.expanduser(str(value)))
+
+
+def integer_arg(value, name, minimum=None):
+    if isinstance(value, bool):
+        raise ValueError("args.%s must be an integer" % name)
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("args.%s must be an integer" % name)
+    if str(value).strip() != str(number):
+        raise ValueError("args.%s must be an integer" % name)
+    if minimum is not None and number < minimum:
+        raise ValueError("args.%s must be >= %d" % (name, minimum))
+    return number
+
+
+def hex_plan_field(value):
+    if value is None or str(value) == "":
+        return "-"
+    return str(value).encode("utf-8").hex()
+
+
+def write_tsv_plan(path, rows):
+    with open(path, "w", encoding="utf-8", newline="\n") as fp:
+        for row in rows:
+            fp.write("\t".join(str(field) for field in row))
+            fp.write("\n")
+
+
+def prepare_transaction_plans(args, tmpdir):
+    transactions = args.get("transactions")
+    if not isinstance(transactions, list) or not transactions:
+        raise ValueError("args.transactions must be a non-empty array")
+    transaction_rows = []
+    tag_rows = []
+    for index, item in enumerate(transactions):
+        if not isinstance(item, dict):
+            raise ValueError("args.transactions[%d] must be an object" % index)
+        start_delta = integer_arg(item.get("start_delta", 0), "transactions[%d].start_delta" % index, 0)
+        duration = integer_arg(item.get("duration"), "transactions[%d].duration" % index, 1)
+        transaction_type = str(item.get("type", "npiFsdbwTransTransaction"))
+        if not re.match(r"^npiFsdbwTrans[A-Za-z0-9_]+$", transaction_type):
+            raise ValueError("args.transactions[%d].type must be an npiFsdbwTrans* enum" % index)
+        transaction_rows.append((start_delta, duration, transaction_type,
+                                 hex_plan_field(item.get("label", ""))))
+        tags = item.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        if not isinstance(tags, list):
+            raise ValueError("args.transactions[%d].tags must be an array" % index)
+        for tag in tags:
+            if not isinstance(tag, str) or not tag:
+                raise ValueError("transaction tags must be non-empty strings")
+            tag_rows.append((index, hex_plan_field(tag)))
+
+    relations = args.get("relations", [])
+    if not isinstance(relations, list):
+        raise ValueError("args.relations must be an array")
+    relation_rows = []
+    for index, item in enumerate(relations):
+        if not isinstance(item, dict):
+            raise ValueError("args.relations[%d] must be an object" % index)
+        relation = item.get("relation", item.get("type", ""))
+        if not isinstance(relation, str) or not relation:
+            raise ValueError("args.relations[%d].relation is required" % index)
+        master = integer_arg(item.get("master"), "relations[%d].master" % index, 0)
+        slave = integer_arg(item.get("slave"), "relations[%d].slave" % index, 0)
+        if master >= len(transactions) or slave >= len(transactions) or master == slave:
+            raise ValueError("args.relations[%d] indexes must select two different transactions" % index)
+        relation_rows.append((hex_plan_field(relation), master, slave))
+
+    transaction_path = os.path.join(tmpdir, "transactions.tsv")
+    write_tsv_plan(transaction_path, transaction_rows)
+    tag_path = ""
+    if tag_rows:
+        tag_path = os.path.join(tmpdir, "transaction-tags.tsv")
+        write_tsv_plan(tag_path, tag_rows)
+    relation_path = ""
+    if relation_rows:
+        relation_path = os.path.join(tmpdir, "transaction-relations.tsv")
+        write_tsv_plan(relation_path, relation_rows)
+    return transaction_path, tag_path, relation_path
+
+
+def prepare_scope_plan(args, tmpdir):
+    operations = args.get("operations")
+    if operations is None:
+        scopes = args.get("scopes")
+        if not isinstance(scopes, list):
+            raise ValueError("args.operations or args.scopes must be an array")
+        operations = [dict(scope, op="scope") if isinstance(scope, dict) else scope for scope in scopes]
+    if not isinstance(operations, list) or not operations:
+        raise ValueError("args.operations or args.scopes must be a non-empty array")
+    rows = []
+    depth = 0
+    scope_count = 0
+    for index, item in enumerate(operations):
+        if not isinstance(item, dict):
+            raise ValueError("FSDB hierarchy operation %d must be an object" % index)
+        op = str(item.get("op", "scope"))
+        if op == "up":
+            if depth <= 0:
+                raise ValueError("FSDB hierarchy operation %d moves above the root" % index)
+            rows.append(("up", "-", "-", "-"))
+            depth -= 1
+            continue
+        if op != "scope":
+            raise ValueError("FSDB hierarchy operation %d has unsupported op: %s" % (index, op))
+        object_type = str(item.get("type", "npiFsdbScopeSvModule"))
+        name = item.get("name", "")
+        if not re.match(r"^npiFsdbScope[A-Za-z0-9_]+$", object_type):
+            raise ValueError("FSDB hierarchy operation %d type must be an npiFsdbScope* enum" % index)
+        if not isinstance(name, str) or not name:
+            raise ValueError("FSDB hierarchy operation %d name is required" % index)
+        rows.append(("scope", object_type, hex_plan_field(name),
+                     hex_plan_field(item.get("def_name", ""))))
+        depth += 1
+        scope_count += 1
+    if scope_count == 0:
+        raise ValueError("FSDB hierarchy plan must create at least one scope")
+    path = os.path.join(tmpdir, "fsdb-hierarchy.tsv")
+    write_tsv_plan(path, rows)
+    return path
+
+
+def cleanup_tcl_tmp(tmpdir):
+    if not os.environ.get("KDEBUG_KEEP_TCL_TMP"):
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def run_tcl_npi(request, state):
@@ -519,36 +734,86 @@ def run_tcl_npi(request, state):
     limits = request.get("limits") if isinstance(request.get("limits"), dict) else {}
     env["KDEBUG_TCL_MAX_ROWS"] = str(limits.get("max_rows", limits.get("max_results", 200)))
     env["KDEBUG_TCL_MAX_DEPTH"] = str(args.get("max_depth", limits.get("max_depth", 3)))
+    env["KDEBUG_TCL_NAME"] = str(args.get("name", ""))
+    env["KDEBUG_TCL_OBJECT_TYPE"] = str(args.get("object_type", ""))
+    env["KDEBUG_TCL_FILE"] = str(args.get("file", ""))
+    env["KDEBUG_TCL_LINE"] = str(args.get("line", ""))
+    env["KDEBUG_TCL_CONTENT"] = str(args.get("content", ""))
+    env["KDEBUG_TCL_OUTPUT"] = normalized_path(args.get("output", ""))
+    env["KDEBUG_TCL_OUTPUT_DIR"] = normalized_path(args.get("output_dir", ""))
+    env["KDEBUG_TCL_OVERWRITE"] = "1" if bool_arg(args.get("overwrite", False)) else "0"
+    env["KDEBUG_TCL_DATABASE"] = normalized_path(args.get("database") or target.get("daidir") or target.get("dbdir"))
+    env["KDEBUG_TCL_CRDB"] = normalized_path(args.get("crdb", ""))
+    env["KDEBUG_TCL_LEVEL"] = str(args.get("level", "RTL"))
+    env["KDEBUG_TCL_MODULE"] = str(args.get("module", ""))
+    env["KDEBUG_TCL_NEW_NAME"] = str(args.get("new_name", ""))
+    env["KDEBUG_TCL_NET_TYPE"] = str(args.get("net_type", "npiDmNetWire"))
+    env["KDEBUG_TCL_PACKED_LEFT"] = str(args.get("packed_left", ""))
+    env["KDEBUG_TCL_PACKED_RIGHT"] = str(args.get("packed_right", ""))
+    env["KDEBUG_TCL_UNIT"] = str(args.get("unit", "1ns"))
+    env["KDEBUG_TCL_BEGIN_TIME"] = str(args.get("begin_time", 0))
+    env["KDEBUG_TCL_END_TIME_DELTA"] = str(args.get("end_time_delta", 0))
+    env["KDEBUG_TCL_STREAM"] = str(args.get("stream", ""))
+    try:
+        if action == "transaction.writer.create":
+            transaction_plan, tag_plan, relation_plan = prepare_transaction_plans(args, tmpdir)
+            env["KDEBUG_TCL_TRANSACTION_PLAN"] = transaction_plan
+            env["KDEBUG_TCL_TAG_PLAN"] = tag_plan
+            env["KDEBUG_TCL_RELATION_PLAN"] = relation_plan
+        elif action == "fsdb.writer.create_scope":
+            env["KDEBUG_TCL_OPERATION_PLAN"] = prepare_scope_plan(args, tmpdir)
+    except ValueError as exc:
+        cleanup_tcl_tmp(tmpdir)
+        return False, {"code": "INVALID_ARGUMENT", "message": str(exc)}
     if os.environ.get("VERDI_HOME") and not os.environ.get("NPIL1_PATH"):
         env["NPIL1_PATH"] = os.path.join(os.environ["VERDI_HOME"], "share", "NPI", "L1", "TCL")
 
+    try:
+        design_cli_args = design_args_for_target(target, action)
+        verdi_cwd = design_workdir_for_target(target, action, tmpdir)
+    except ValueError as exc:
+        cleanup_tcl_tmp(tmpdir)
+        return False, {"code": "INVALID_ARGUMENT", "message": str(exc)}
+
     cmd = [verdi, "-batch", "-nologo", "-play", tcl_script_path()]
-    cmd.extend(design_args_for_target(target))
+    cmd.extend(design_cli_args)
     timeout_sec = max(1.0, parse_timeout_ms(request, 120000) / 1000.0)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=env, cwd=tmpdir, universal_newlines=True)
+                                env=env, cwd=verdi_cwd, universal_newlines=True)
         try:
             stdout, stderr = proc.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, stderr = proc.communicate()
+            cleanup_tcl_tmp(tmpdir)
             return False, {"code": "TCL_NPI_TIMEOUT", "message": "Verdi Tcl action timed out",
                            "stdout": stdout[-4000:], "stderr": stderr[-4000:]}
     except OSError as exc:
+        cleanup_tcl_tmp(tmpdir)
         return False, {"code": "VERDI_EXEC_FAILED", "message": str(exc)}
+
+    license_error = classify_verdi_license_error(stdout, stderr, proc.returncode)
+    if license_error:
+        cleanup_tcl_tmp(tmpdir)
+        return False, license_error
 
     payload = read_json_file(rsp_path)
     if not isinstance(payload, dict):
-        return False, classify_verdi_no_response(stdout, stderr, proc.returncode)
+        error = classify_verdi_no_response(stdout, stderr, proc.returncode)
+        cleanup_tcl_tmp(tmpdir)
+        return False, error
     if not payload.get("ok"):
         err = payload.get("error") or {}
-        return False, {"code": err.get("code", "TCL_NPI_ERROR"),
-                       "message": err.get("message", "Tcl NPI action failed"),
-                       "stdout": stdout[-2000:],
-                       "stderr": stderr[-2000:]}
+        error = {"code": err.get("code", "TCL_NPI_ERROR"),
+                 "message": err.get("message", "Tcl NPI action failed"),
+                 "stdout": stdout[-2000:],
+                 "stderr": stderr[-2000:]}
+        cleanup_tcl_tmp(tmpdir)
+        return False, error
     data = payload.get("data") or {}
     data.setdefault("verdi", {"exit_code": proc.returncode})
+    cleanup_tcl_tmp(tmpdir)
     return True, data
 
 
@@ -2003,7 +2268,13 @@ def run_action(request, state):
         return active_driver_chain_action(request, state)
     if action in ("trace.driver", "trace.load", "trace.query", "signal.resolve",
                   "signal.canonicalize", "signal.info", "signal.scan",
-                  "value.at", "value.batch_at", "scope.list"):
+                  "value.at", "value.batch_at", "scope.list",
+                  "npi.capabilities", "netlist.resolve", "netlist.iterate",
+                  "text.line", "text.words", "text.replace_line",
+                  "dm.add_net", "dm.clone_module", "vcs.summary",
+                  "power.resolve", "power.list", "crdb.resolve",
+                  "crdb.correlates", "transaction.writer.create",
+                  "fsdb.writer.create_scope"):
         ok, data = run_tcl_npi(request, state)
         if not ok:
             return False, data

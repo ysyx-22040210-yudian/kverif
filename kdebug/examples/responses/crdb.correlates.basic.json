@@ -1,0 +1,32 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "crdb.correlates",
+  "summary": {
+    "name": "top.u_dut.ready",
+    "level": "RTL",
+    "count": 1,
+    "truncated": false
+  },
+  "data": {
+    "database": "/data/build/dut.crdb",
+    "query": "top.u_dut.ready",
+    "level": "RTL",
+    "count": 1,
+    "truncated": false,
+    "correlated": [
+      {
+        "name": "ready_reg",
+        "full_name": "top/u_dut/ready_reg",
+        "type": "npiCrdbSignal"
+      }
+    ],
+    "summary": {
+      "name": "top.u_dut.ready",
+      "level": "RTL",
+      "count": 1,
+      "truncated": false
+    }
+  },
+  "warnings": []
+}

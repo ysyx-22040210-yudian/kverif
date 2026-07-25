@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from runner import CliRunner
+from runner import CliRunner, CommandRunner
 
 
 VALID_ACTIONS = {"api_version": "kdebug.v1", "action": "actions"}
@@ -106,3 +107,28 @@ def test_json_response_is_single_document(cli_runner: CliRunner) -> None:
     result = cli_runner.run(VALID_ACTIONS, output_format="json")
     decoded = json.loads(result.stdout_raw)
     assert decoded == result.response
+
+
+@pytest.mark.contract
+def test_shortcut_keeps_args_when_target_is_empty(
+    command_runner: CommandRunner, kdebug_bin: Path
+) -> None:
+    result = command_runner.run(
+        [
+            str(kdebug_bin),
+            "--json",
+            "schema",
+            "--action",
+            "actions",
+            "--kind",
+            "request",
+        ],
+        timeout_sec=30,
+    )
+    assert result.returncode == 0
+    assert result.stderr_raw == ""
+    response = json.loads(result.stdout_raw)
+    assert response["ok"] is True
+    assert response["action"] == "schema"
+    assert response["data"]["action"] == "actions"
+    assert response["data"]["kind"] == "request"

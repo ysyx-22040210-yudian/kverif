@@ -1,0 +1,28 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "npi.capabilities",
+  "summary": {
+    "domain_count": 11,
+    "available_domain_count": 11
+  },
+  "data": {
+    "domains": [
+      {
+        "domain": "netlist",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_nl_handle_by_name",
+            "available": true
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "domain_count": 11,
+      "available_domain_count": 11
+    }
+  },
+  "warnings": []
+}

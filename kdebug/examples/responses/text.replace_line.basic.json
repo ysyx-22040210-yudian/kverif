@@ -1,0 +1,25 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "text.replace_line",
+  "summary": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12,
+    "output": "/data/out/top.patched.sv",
+    "status": "written"
+  },
+  "data": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12,
+    "original": "  assign ready = valid;",
+    "replacement": "  assign ready = valid && enable;",
+    "output": "/data/out/top.patched.sv",
+    "summary": {
+      "file": "/data/project/rtl/top.sv",
+      "line": 12,
+      "output": "/data/out/top.patched.sv",
+      "status": "written"
+    }
+  },
+  "warnings": []
+}

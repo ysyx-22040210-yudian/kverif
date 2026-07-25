@@ -1,0 +1,24 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "netlist.resolve",
+  "summary": {
+    "name": "top.u_dut.ready",
+    "status": "resolved"
+  },
+  "data": {
+    "query": "top.u_dut.ready",
+    "requested_type": "npiNlNet",
+    "object": {
+      "name": "ready",
+      "full_name": "top.u_dut.ready",
+      "type": "npiNlDeclNet",
+      "size": 1
+    },
+    "summary": {
+      "name": "top.u_dut.ready",
+      "status": "resolved"
+    }
+  },
+  "warnings": []
+}

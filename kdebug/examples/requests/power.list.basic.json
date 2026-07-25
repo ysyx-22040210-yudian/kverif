@@ -1,0 +1,14 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "power.list",
+  "target": {
+    "daidir": "/data/build/power_simv.daidir"
+  },
+  "args": {
+    "name": "top/PD_TOP",
+    "object_type": "npiPwElement"
+  },
+  "limits": {
+    "max_rows": 100
+  }
+}

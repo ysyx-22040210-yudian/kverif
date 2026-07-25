@@ -1,0 +1,26 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "dm.add_net",
+  "summary": {
+    "module": "top",
+    "name": "debug_bus",
+    "output_dir": "/data/out/dm_add_net",
+    "status": "written"
+  },
+  "data": {
+    "module": "top",
+    "name": "debug_bus",
+    "net_type": "npiDmNetWire",
+    "packed_left": 7,
+    "packed_right": 0,
+    "output_dir": "/data/out/dm_add_net",
+    "summary": {
+      "module": "top",
+      "name": "debug_bus",
+      "output_dir": "/data/out/dm_add_net",
+      "status": "written"
+    }
+  },
+  "warnings": []
+}

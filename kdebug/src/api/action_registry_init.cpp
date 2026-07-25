@@ -179,6 +179,47 @@ void register_combined(ActionRegistry& r) {
     register_spec(r, chain);
 }
 
+void register_npi_extensions(ActionRegistry& r) {
+    struct Entry {
+        const char* name;
+        const char* category;
+        ResourceRequirement resource;
+        const char* required[4];
+        size_t required_count;
+    };
+    const Entry entries[] = {
+        {"npi.capabilities", "builtin", ResourceRequirement::None, {nullptr}, 0},
+        {"netlist.resolve", "design", ResourceRequirement::Design, {"name"}, 1},
+        {"netlist.iterate", "design", ResourceRequirement::Design, {"object_type"}, 1},
+        {"text.line", "design", ResourceRequirement::Design, {"file", "line"}, 2},
+        {"text.words", "design", ResourceRequirement::Design, {"file", "line"}, 2},
+        {"text.replace_line", "design", ResourceRequirement::Design, {"file", "line", "content", "output"}, 4},
+        {"dm.add_net", "design", ResourceRequirement::Design, {"module", "name", "output_dir"}, 3},
+        {"dm.clone_module", "design", ResourceRequirement::Design, {"module", "new_name", "output_dir"}, 3},
+        {"vcs.summary", "design", ResourceRequirement::Design, {nullptr}, 0},
+        {"power.resolve", "design", ResourceRequirement::Design, {"name"}, 1},
+        {"power.list", "design", ResourceRequirement::Design, {"name", "object_type"}, 2},
+        {"crdb.resolve", "design", ResourceRequirement::None, {"crdb", "name"}, 2},
+        {"crdb.correlates", "design", ResourceRequirement::None, {"crdb", "name"}, 2},
+        {"transaction.writer.create", "waveform", ResourceRequirement::None, {"output", "stream", "transactions"}, 3},
+        {"fsdb.writer.create_scope", "waveform", ResourceRequirement::None, {"output"}, 1}
+    };
+    for (size_t i = 0; i < sizeof(entries) / sizeof(entries[0]); ++i) {
+        ActionSpec spec = make_spec(entries[i].name, entries[i].category,
+                                    ActionStatus::Experimental, entries[i].resource,
+                                    "engine_forward");
+        for (size_t j = 0; j < entries[i].required_count; ++j) {
+            spec.args.required.push_back(entries[i].required[j]);
+        }
+        if (spec.name == "power.resolve") {
+            spec.request_examples.push_back("examples/requests/power.resolve.source.json");
+        } else if (spec.name == "power.list") {
+            spec.request_examples.push_back("examples/requests/power.list.source.json");
+        }
+        register_spec(r, spec);
+    }
+}
+
 void register_removed(ActionRegistry& r) {
     r.register_spec(make_spec("signal.search", "design", ActionStatus::Removed,
                               ResourceRequirement::Design, "removed"));
@@ -191,6 +232,7 @@ ActionRegistry* build_registry() {
     register_design(*registry);
     register_waveform(*registry);
     register_combined(*registry);
+    register_npi_extensions(*registry);
     register_removed(*registry);
     return registry;
 }

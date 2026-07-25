@@ -1,0 +1,39 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "scope.list",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "path": "top",
+    "scope_count": 2,
+    "signal_count": 0
+  },
+  "data": {
+    "path": "top",
+    "scopes": [
+      "top.u_a",
+      "top.u_b"
+    ],
+    "signals": [],
+    "signals_preview": [],
+    "summary": {
+      "path": "top",
+      "scope_count": 2,
+      "signal_count": 0
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

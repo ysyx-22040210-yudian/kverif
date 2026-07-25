@@ -1,0 +1,11 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "text.line",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "vcs.summary",
+  "summary": {
+    "database": "/data/build/simv.daidir",
+    "warnings": 0,
+    "errors": 0,
+    "modules": 12
+  },
+  "data": {
+    "database": "/data/build/simv.daidir",
+    "name": "simv.daidir",
+    "tool": {
+      "name": "VCS",
+      "version": "O-2018.09-SP2"
+    },
+    "compilation": {
+      "warnings": 0,
+      "errors": 0,
+      "result": 1
+    },
+    "design": {
+      "modules": 12,
+      "verilog_files": 2,
+      "systemverilog_files": 4
+    },
+    "simulation": {
+      "test_count": 1,
+      "waveform_count": 1
+    },
+    "summary": {
+      "database": "/data/build/simv.daidir",
+      "warnings": 0,
+      "errors": 0,
+      "modules": 12
+    }
+  },
+  "warnings": []
+}

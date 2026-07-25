@@ -1,0 +1,30 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "netlist.iterate",
+  "summary": {
+    "reference": "top.u_dut",
+    "object_type": "npiNlNet",
+    "count": 1,
+    "truncated": false
+  },
+  "data": {
+    "reference": "top.u_dut",
+    "object_type": "npiNlNet",
+    "count": 1,
+    "truncated": false,
+    "items": [
+      {
+        "full_name": "top.u_dut.ready",
+        "type": "npiNlDeclNet"
+      }
+    ],
+    "summary": {
+      "reference": "top.u_dut",
+      "object_type": "npiNlNet",
+      "count": 1,
+      "truncated": false
+    }
+  },
+  "warnings": []
+}

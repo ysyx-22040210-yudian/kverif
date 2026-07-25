@@ -1,0 +1,13 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "dm.clone_module",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "module": "alu",
+    "new_name": "alu_debug",
+    "output_dir": "/data/out/dm_clone",
+    "overwrite": false
+  }
+}

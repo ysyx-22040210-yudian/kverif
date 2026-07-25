@@ -1,0 +1,14 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "text.replace_line",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12,
+    "content": "  assign ready = valid && enable;",
+    "output": "/data/out/top.patched.sv",
+    "overwrite": false
+  }
+}

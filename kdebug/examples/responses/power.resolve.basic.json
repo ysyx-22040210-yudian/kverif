@@ -1,0 +1,23 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "power.resolve",
+  "summary": {
+    "name": "top/PD_TOP",
+    "status": "resolved"
+  },
+  "data": {
+    "query": "top/PD_TOP",
+    "requested_type": "npiPwPowerDomain",
+    "object": {
+      "name": "PD_TOP",
+      "full_name": "top/PD_TOP",
+      "type": "npiPwPowerDomain"
+    },
+    "summary": {
+      "name": "top/PD_TOP",
+      "status": "resolved"
+    }
+  },
+  "warnings": []
+}

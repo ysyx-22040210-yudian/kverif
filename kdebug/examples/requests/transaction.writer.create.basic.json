@@ -1,0 +1,35 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "transaction.writer.create",
+  "args": {
+    "output": "/data/out/transactions.fsdb",
+    "overwrite": false,
+    "unit": "1ns",
+    "begin_time": 0,
+    "stream": "bus.requests",
+    "transactions": [
+      {
+        "start_delta": 10,
+        "duration": 20,
+        "type": "npiFsdbwTransTransaction",
+        "label": "req0",
+        "tags": [
+          "read"
+        ]
+      },
+      {
+        "start_delta": 5,
+        "duration": 10,
+        "type": "npiFsdbwTransTransaction",
+        "label": "rsp0"
+      }
+    ],
+    "relations": [
+      {
+        "relation": "npiFsdbwRelParentChild",
+        "master": 0,
+        "slave": 1
+      }
+    ]
+  }
+}

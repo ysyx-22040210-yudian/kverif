@@ -1,0 +1,30 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "power.list",
+  "summary": {
+    "reference": "top/PD_TOP",
+    "object_type": "npiPwElement",
+    "count": 1,
+    "truncated": false
+  },
+  "data": {
+    "reference": "top/PD_TOP",
+    "object_type": "npiPwElement",
+    "count": 1,
+    "truncated": false,
+    "items": [
+      {
+        "name": "u_dut",
+        "full_name": "top/u_dut"
+      }
+    ],
+    "summary": {
+      "reference": "top/PD_TOP",
+      "object_type": "npiPwElement",
+      "count": 1,
+      "truncated": false
+    }
+  },
+  "warnings": []
+}

@@ -1,0 +1,9 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "crdb.resolve",
+  "args": {
+    "crdb": "/data/build/dut.crdb",
+    "name": "top.u_dut.ready",
+    "level": "RTL"
+  }
+}

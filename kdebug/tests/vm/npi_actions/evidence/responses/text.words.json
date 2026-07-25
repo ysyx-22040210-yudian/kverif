@@ -1,0 +1,112 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "text.words",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 7,
+    "count": 12,
+    "truncated": false
+  },
+  "data": {
+    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 7,
+    "count": 12,
+    "truncated": false,
+    "words": [
+      {
+        "index": 1,
+        "text": "    ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 2,
+        "text": "result",
+        "attribute": "npiTextOutSignal",
+        "attribute_id": 9
+      },
+      {
+        "index": 3,
+        "text": " ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 4,
+        "text": "=",
+        "attribute": "npiTextOperator",
+        "attribute_id": 11
+      },
+      {
+        "index": 5,
+        "text": " ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 6,
+        "text": "lhs",
+        "attribute": "npiTextInSignal",
+        "attribute_id": 8
+      },
+      {
+        "index": 7,
+        "text": " ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 8,
+        "text": "+",
+        "attribute": "npiTextOperator",
+        "attribute_id": 11
+      },
+      {
+        "index": 9,
+        "text": " ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 10,
+        "text": "rhs",
+        "attribute": "npiTextInSignal",
+        "attribute_id": 8
+      },
+      {
+        "index": 11,
+        "text": ";",
+        "attribute": "npiTextSymbol",
+        "attribute_id": 13
+      },
+      {
+        "index": 12,
+        "text": "\n",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      }
+    ],
+    "summary": {
+      "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+      "line": 7,
+      "count": 12,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "npi.capabilities",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "domain_count": 11,
+    "available_domain_count": 11
+  },
+  "data": {
+    "domains": [
+      {
+        "domain": "language",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_handle_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_get",
+            "available": true
+          },
+          {
+            "command": "npi_get_str",
+            "available": true
+          },
+          {
+            "command": "npi_iterate",
+            "available": true
+          },
+          {
+            "command": "npi_scan",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "netlist",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_nl_handle_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_nl_get",
+            "available": true
+          },
+          {
+            "command": "npi_nl_get_str",
+            "available": true
+          },
+          {
+            "command": "npi_nl_iterate",
+            "available": true
+          },
+          {
+            "command": "npi_nl_scan",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "text",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_text_file_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_text_line_by_number",
+            "available": true
+          },
+          {
+            "command": "npi_text_iter_start",
+            "available": true
+          },
+          {
+            "command": "npi_text_replace_line",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "design_manipulation",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_dm_module_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_dm_add_net",
+            "available": true
+          },
+          {
+            "command": "npi_dm_clone_module",
+            "available": true
+          },
+          {
+            "command": "npi_dm_write_text_mode",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "fsdb_reader",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_fsdb_open",
+            "available": true
+          },
+          {
+            "command": "npi_fsdb_sig_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_fsdb_create_vct",
+            "available": true
+          },
+          {
+            "command": "npi_fsdb_vct_value",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "transaction_writer",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_fsdbw_open",
+            "available": true
+          },
+          {
+            "command": "npi_fsdbw_stream_begin",
+            "available": true
+          },
+          {
+            "command": "npi_fsdbw_trans_begin",
+            "available": true
+          },
+          {
+            "command": "npi_fsdbw_trans_end",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "fsdb_writer",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_fsdbw_create",
+            "available": true
+          },
+          {
+            "command": "npi_fsdbw_begin_hierarchy_creation",
+            "available": true
+          },
+          {
+            "command": "npi_fsdbw_create_scope",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "coverage",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_cov_open",
+            "available": true
+          },
+          {
+            "command": "npi_cov_get",
+            "available": true
+          },
+          {
+            "command": "npi_cov_iter_start",
+            "available": true
+          },
+          {
+            "command": "npi_cov_merge_test",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "vcs",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_vcs_open",
+            "available": true
+          },
+          {
+            "command": "npi_vcs_handle",
+            "available": true
+          },
+          {
+            "command": "npi_vcs_get",
+            "available": true
+          },
+          {
+            "command": "npi_vcs_get_str",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "power",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_pw_handle_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_pw_iter_start",
+            "available": true
+          },
+          {
+            "command": "npi_pw_property",
+            "available": true
+          },
+          {
+            "command": "npi_pw_property_str",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "crdb",
+        "available": true,
+        "commands": [
+          {
+            "command": "npi_crdb_open",
+            "available": true
+          },
+          {
+            "command": "npi_crdb_handle_by_name",
+            "available": true
+          },
+          {
+            "command": "npi_crdb_iter_start",
+            "available": true
+          },
+          {
+            "command": "npi_crdb_get_str",
+            "available": true
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "domain_count": 11,
+      "available_domain_count": 11
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

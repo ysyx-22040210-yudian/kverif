@@ -1,0 +1,8 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "vcs.summary",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {}
+}

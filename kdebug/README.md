@@ -805,6 +805,71 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 4. 如果两类资源都有，用 `trace.active_driver` 给出当前时间点的生效驱动。
 5. 只有当 compact 证据不足时，再打开 `include_source`、`include_trace`、`include_rows` 等细节。
 
+## Verdi 2018 NPI 扩展 Actions
+
+KDebug 依据 NPI O-2018.09-SP2 功能矩阵增加了一组独立 Tcl action。它们通过通用
+`action NAME --arg key=value` 入口调用，不引入语言 SDK，也不允许调用方注入 Tcl。
+
+| action | 输入 | 功能 |
+| --- | --- | --- |
+| `npi.capabilities` | 无 | 探测当前 Verdi 进程实际可用的 NPI Tcl command |
+| `netlist.resolve/iterate` | daidir | flattened netlist 查找和一对多遍历 |
+| `text.line/words` | daidir、file、line | NPI Text Model 行、word 和 TWA 读取 |
+| `text.replace_line` | daidir、file、line、content、output | 修改源码模型并只写新副本 |
+| `dm.add_net/clone_module` | daidir、DM 参数、output_dir | 受控设计修改并通过 DM writer 导出 |
+| `vcs.summary` | daidir | VCS Model 编译、设计和仿真统计 |
+| `power.resolve/list` | 含 Power Model 的 daidir，或 `target.filelist+upf` | power object 查找和遍历 |
+| `crdb.resolve/correlates` | crdb、name、level | CRDB 对象和 RTL/GATE correlation 查询 |
+| `transaction.writer.create` | output、stream、transactions | 创建并完整关闭 transaction FSDB |
+| `fsdb.writer.create_scope` | output、operations/scopes | 创建 signal FSDB scope 层次 |
+
+所有新增 action 当前标记为 `experimental`。部署或 CI 应先检查：
+
+```bash
+/home/host/kverif/tools/kdebug --json actions
+/home/host/kverif/tools/kdebug --json schema \
+  --action transaction.writer.create --kind request
+```
+
+典型调用：
+
+```bash
+KDEBUG=/home/host/kverif/tools/kdebug
+
+"$KDEBUG" --json action netlist.resolve \
+  --daidir /data/build/simv.daidir \
+  --arg name=top.u_dut.ready --arg object_type=npiNlNet
+
+"$KDEBUG" --json action text.replace_line \
+  --daidir /data/build/simv.daidir \
+  --arg file=/data/project/rtl/top.sv --arg line=127 \
+  --arg 'content=  assign ready = valid && enable;' \
+  --arg output=/data/out/top.patched.sv
+
+"$KDEBUG" --json action transaction.writer.create \
+  --arg output=/data/out/transactions.fsdb --arg stream=bus.requests \
+  --arg 'transactions=[{"start_delta":10,"duration":20,"label":"req0"}]'
+
+POWER_DIR=/data/project/power
+"$KDEBUG" --json action power.resolve \
+  --target filelist="$POWER_DIR/run.f" --target upf="$POWER_DIR/design.upf" \
+  --target workdir="$POWER_DIR" --target 'defines=["NOVAS_UPF_PKG"]' \
+  --arg name=system/PD_TOP --arg object_type=npiPwPowerDomain
+```
+
+修改和 writer action 默认拒绝已有输出。只有显式传 `--arg overwrite=true` 才允许覆盖；
+`text.replace_line` 始终禁止输入和输出为同一文件。transaction/hierarchy 数组由 Python
+请求层校验并转换成受控临时 TSV，Tcl 后端只读取固定字段，不执行 `eval`。
+
+VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。13 个 action 已通过；
+`power.resolve/list` 已真实加载 RTL+UPF，但当前 VM 缺少 `PowerAwareAnalysis` license，响应为
+`LICENSE_UNAVAILABLE`。机器结果见
+[`tests/vm/npi_actions/evidence/vm-summary.json`](tests/vm/npi_actions/evidence/vm-summary.json)，
+完整运行命令见[二次开发手册 13.7](../doc/secondary_development_guide.md#137-verdi-2018-npi-独立-action-全流程)。
+
+逐字段参数、完整命令、返回数据处理和二次开发边界见
+[二次开发手册 10.2.1](../doc/secondary_development_guide.md#1021-verdi-2018-npi-独立-action)。
+
 ## 错误、截断与证据
 
 常见错误码：
@@ -818,6 +883,7 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 - `WAVE_QUERY_FAILED`
 - `INTERNAL_ENGINE_FAILED`
 - `INTERNAL_ERROR`
+- `LICENSE_UNAVAILABLE`
 
 所有脚本必须先检查 `ok`。失败时读取 `error.code` 和 `error.message`，不要解析 stderr 或人类文本。
 

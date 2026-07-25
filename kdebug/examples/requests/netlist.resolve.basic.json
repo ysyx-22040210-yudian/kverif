@@ -1,0 +1,11 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "netlist.resolve",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "name": "top.u_dut.ready",
+    "object_type": "npiNlNet"
+  }
+}

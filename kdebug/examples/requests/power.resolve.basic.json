@@ -1,0 +1,11 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "power.resolve",
+  "target": {
+    "daidir": "/data/build/power_simv.daidir"
+  },
+  "args": {
+    "name": "top/PD_TOP",
+    "object_type": "npiPwPowerDomain"
+  }
+}

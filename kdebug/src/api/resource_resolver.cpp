@@ -22,7 +22,8 @@ ResourceResolution resource_error(const std::string& message) {
 ResourceResolution ResourceResolver::resolve(const RequestEnvelope& request, const ActionSpec& spec) const {
     ResourceResolution result;
     result.context.target = request.target;
-    result.context.design = has_string(request.target, "daidir");
+    result.context.design = has_string(request.target, "daidir") ||
+                            has_string(request.target, "filelist");
     result.context.waveform = has_string(request.target, "fsdb");
     result.context.session = has_string(request.target, "session_id");
 
@@ -31,7 +32,7 @@ ResourceResolution ResourceResolver::resolve(const RequestEnvelope& request, con
         return result;
     case ResourceRequirement::Design:
         if (result.context.design || result.context.session) return result;
-        return resource_error("design action requires target.daidir or a design session");
+        return resource_error("design action requires target.daidir, target.filelist, or a design session");
     case ResourceRequirement::Waveform:
         if (result.context.waveform || result.context.session) return result;
         return resource_error("waveform action requires target.fsdb or a waveform session");

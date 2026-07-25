@@ -1,0 +1,29 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "transaction.writer.create",
+  "summary": {
+    "output": "/data/out/transactions.fsdb",
+    "stream": "bus.requests",
+    "transaction_count": 2,
+    "relation_count": 1,
+    "status": "written"
+  },
+  "data": {
+    "output": "/data/out/transactions.fsdb",
+    "unit": "1ns",
+    "begin_time": 0,
+    "end_time": 45,
+    "stream": "bus.requests",
+    "transaction_count": 2,
+    "relation_count": 1,
+    "summary": {
+      "output": "/data/out/transactions.fsdb",
+      "stream": "bus.requests",
+      "transaction_count": 2,
+      "relation_count": 1,
+      "status": "written"
+    }
+  },
+  "warnings": []
+}

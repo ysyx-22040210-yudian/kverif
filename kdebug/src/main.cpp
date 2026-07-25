@@ -333,10 +333,14 @@ ShortcutParseResult parse_shortcut(int argc, char** argv, OutputFormat& format) 
         }
     }
 
-    if (target.empty()) request.erase("target");
-    if (args.empty()) request.erase("args");
-    if (limits.empty()) request.erase("limits");
-    if (output.empty()) request.erase("output");
+    const bool target_empty = target.empty();
+    const bool args_empty = args.empty();
+    const bool limits_empty = limits.empty();
+    const bool output_empty = output.empty();
+    if (target_empty) request.erase("target");
+    if (args_empty) request.erase("args");
+    if (limits_empty) request.erase("limits");
+    if (output_empty) request.erase("output");
     result.request = request;
     result.ok = true;
     return result;

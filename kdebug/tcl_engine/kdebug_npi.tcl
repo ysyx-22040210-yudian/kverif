@@ -593,6 +593,891 @@ proc active_trace_action {signal time} {
         summary [json_object [list signal $signal requested_time $time active_time $active_time status [expr {($rc > 0 || $dump_rc > 0 || $active_time ne "") ? "ok" : "not_found"}]]]]
 }
 
+proc command_available {name} {
+    expr {[llength [info commands $name]] > 0}
+}
+
+proc require_command {name} {
+    if {[command_available $name]} {return 1}
+    fail_data "NPI_COMMAND_UNAVAILABLE" "NPI command is unavailable in this Verdi runtime: $name"
+    return 0
+}
+
+proc positive_limit {value fallback} {
+    if {![string is integer -strict $value] || $value <= 0} {return $fallback}
+    return $value
+}
+
+proc safe_nl_get_str {hdl prop} {
+    if {$hdl eq ""} {return ""}
+    if {[catch {npi_nl_get_str -property $prop -object $hdl} value]} {return ""}
+    return $value
+}
+
+proc safe_nl_get {hdl prop} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_nl_get -property $prop -object $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq "" || $value eq "npiNlUndefined"} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc netlist_handle_json {hdl} {
+    return [json_object [list \
+        name [safe_nl_get_str $hdl npiNlName] \
+        full_name [safe_nl_get_str $hdl npiNlFullName] \
+        type [safe_nl_get_str $hdl npiNlType] \
+        instance_type [safe_nl_get_str $hdl npiNlInstType] \
+        cell_type [safe_nl_get_str $hdl npiNlCellType] \
+        size [safe_nl_get $hdl npiNlSize]]]
+}
+
+proc valid_npi_enum {value prefix} {
+    if {$value eq ""} {return 1}
+    expr {[string first $prefix $value] == 0 && [regexp {^[A-Za-z0-9_]+$} $value]}
+}
+
+proc bool_value {value} {
+    expr {[string tolower $value] in {1 true yes on}}
+}
+
+proc valid_hdl_identifier {value} {
+    regexp {^[A-Za-z_][A-Za-z0-9_$]*$} $value
+}
+
+proc decode_hex_utf8 {value} {
+    if {$value eq "-"} {return ""}
+    if {![regexp {^([0-9A-Fa-f][0-9A-Fa-f])*$} $value]} {
+        error "invalid hex-encoded plan field"
+    }
+    return [encoding convertfrom utf-8 [binary format H* $value]]
+}
+
+proc read_plan_rows {path expected_fields} {
+    if {$path eq "" || ![file isfile $path]} {
+        error "controlled action plan is missing: $path"
+    }
+    set fp [open $path r]
+    fconfigure $fp -encoding utf-8 -translation lf
+    set rows {}
+    set line_number 0
+    while {[gets $fp line] >= 0} {
+        incr line_number
+        if {$line eq ""} {continue}
+        set fields [split $line "\t"]
+        if {[llength $fields] != $expected_fields} {
+            close $fp
+            error "invalid controlled action plan row $line_number"
+        }
+        lappend rows $fields
+    }
+    close $fp
+    return $rows
+}
+
+proc prepare_output_file {path overwrite} {
+    if {$path eq ""} {
+        fail_data "MISSING_FIELD" "args.output is required"
+        return 0
+    }
+    if {[file exists $path]} {
+        if {![bool_value $overwrite]} {
+            fail_data "OUTPUT_EXISTS" "output already exists; set args.overwrite=true to replace it: $path"
+            return 0
+        }
+        if {[file isdirectory $path]} {
+            fail_data "OUTPUT_IS_DIRECTORY" "output file path is a directory: $path"
+            return 0
+        }
+        file delete -force -- $path
+    }
+    file mkdir [file dirname $path]
+    return 1
+}
+
+proc prepare_output_directory {path overwrite} {
+    if {$path eq ""} {
+        fail_data "MISSING_FIELD" "args.output_dir is required"
+        return 0
+    }
+    if {[file exists $path] && ![file isdirectory $path]} {
+        fail_data "OUTPUT_NOT_DIRECTORY" "output directory path is an existing file: $path"
+        return 0
+    }
+    if {[file exists $path] && ![bool_value $overwrite]} {
+        fail_data "OUTPUT_EXISTS" "output directory already exists; set args.overwrite=true to update it: $path"
+        return 0
+    }
+    file mkdir $path
+    return 1
+}
+
+proc netlist_resolve_action {name object_type} {
+    if {$name eq ""} {
+        fail_data "MISSING_FIELD" "args.name is required"
+        return
+    }
+    if {![valid_npi_enum $object_type npiNl]} {
+        fail_data "INVALID_ENUM" "args.object_type must be an npiNl* enum"
+        return
+    }
+    if {![require_command npi_nl_handle_by_name]} {return}
+    if {$object_type eq ""} {
+        set hdl [npi_nl_handle_by_name -name $name]
+    } else {
+        set hdl [npi_nl_handle_by_name -name $name -type $object_type]
+    }
+    if {$hdl eq ""} {
+        fail_data "NETLIST_OBJECT_NOT_FOUND" "netlist object not found: $name"
+        return
+    }
+    set object_json [netlist_handle_json $hdl]
+    catch {npi_nl_release_handle -object $hdl}
+    ok_data [list \
+        query [json_string $name] \
+        requested_type [json_string $object_type] \
+        object $object_json \
+        summary [json_object [list name $name status resolved]]]
+}
+
+proc netlist_iterate_action {name object_type max_rows} {
+    if {$object_type eq ""} {
+        fail_data "MISSING_FIELD" "args.object_type is required"
+        return
+    }
+    if {![valid_npi_enum $object_type npiNl]} {
+        fail_data "INVALID_ENUM" "args.object_type must be an npiNl* enum"
+        return
+    }
+    if {![require_command npi_nl_iterate]} {return}
+    set ref ""
+    if {$name ne ""} {
+        set ref [npi_nl_handle_by_name -name $name]
+        if {$ref eq ""} {
+            fail_data "NETLIST_OBJECT_NOT_FOUND" "netlist reference object not found: $name"
+            return
+        }
+    }
+    set iter [npi_nl_iterate -type $object_type -refHandle $ref]
+    set rows {}
+    set limit [positive_limit $max_rows 200]
+    set truncated 0
+    if {$iter ne ""} {
+        while {1} {
+            set child [npi_nl_scan -iterator $iter]
+            if {$child eq ""} {break}
+            if {[llength $rows] >= $limit} {
+                set truncated 1
+                catch {npi_nl_release_handle -object $child}
+                break
+            }
+            lappend rows [netlist_handle_json $child]
+            catch {npi_nl_release_handle -object $child}
+        }
+    }
+    if {$truncated && $iter ne ""} {catch {npi_nl_release_handle -object $iter}}
+    if {$ref ne ""} {catch {npi_nl_release_handle -object $ref}}
+    ok_data [list \
+        reference [json_string $name] \
+        object_type [json_string $object_type] \
+        count [llength $rows] \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        items [json_array_raw $rows] \
+        summary [json_object [list reference $name object_type $object_type count [llength $rows] truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc safe_text_property {hdl prop} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_text_property -type $prop -ref $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq ""} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc safe_text_property_str {hdl prop} {
+    if {$hdl eq ""} {return ""}
+    if {[catch {npi_text_property_str -type $prop -ref $hdl} value]} {return ""}
+    return $value
+}
+
+proc text_line_handles {file_name line_number file_var line_var} {
+    upvar 1 $file_var file_hdl
+    upvar 1 $line_var line_hdl
+    set file_hdl ""
+    set line_hdl ""
+    if {$file_name eq "" || ![string is integer -strict $line_number] || $line_number <= 0} {
+        fail_data "MISSING_FIELD" "args.file and a positive args.line are required"
+        return 0
+    }
+    if {![require_command npi_text_file_by_name]} {return 0}
+    set file_hdl [npi_text_file_by_name -name $file_name]
+    if {$file_hdl eq ""} {
+        fail_data "TEXT_FILE_NOT_FOUND" "NPI Text file not found: $file_name"
+        return 0
+    }
+    set line_hdl [npi_text_line_by_number -ref $file_hdl -number $line_number]
+    if {$line_hdl eq ""} {
+        fail_data "TEXT_LINE_NOT_FOUND" "NPI Text line not found: $file_name:$line_number"
+        return 0
+    }
+    return 1
+}
+
+proc text_line_action {file_name line_number} {
+    if {![text_line_handles $file_name $line_number file_hdl line_hdl]} {return}
+    set full_name [safe_text_property_str $file_hdl npiTextFileFullName]
+    set content [safe_text_property_str $line_hdl npiTextLineContent]
+    set word_count [safe_text_property $line_hdl npiTextWordCount]
+    ok_data [list \
+        file [json_string $file_name] \
+        full_name [json_string $full_name] \
+        line $line_number \
+        content [json_string $content] \
+        word_count [json_value $word_count] \
+        summary [json_object [list file $file_name line $line_number word_count $word_count]]]
+}
+
+proc text_words_action {file_name line_number max_rows} {
+    if {![text_line_handles $file_name $line_number file_hdl line_hdl]} {return}
+    set iter [npi_text_iter_start -type npiTextWord -ref $line_hdl]
+    set rows {}
+    set limit [positive_limit $max_rows 200]
+    set truncated 0
+    if {$iter ne ""} {
+        while {1} {
+            set word [npi_text_iter_next -iter $iter]
+            if {$word eq ""} {break}
+            if {[llength $rows] >= $limit} {
+                set truncated 1
+                break
+            }
+            lappend rows [json_object [list \
+                index [safe_text_property $word npiTextWordNumber] \
+                text [safe_text_property_str $word npiTextWordName] \
+                attribute [safe_text_property_str $word npiTextWordAttribute] \
+                attribute_id [safe_text_property $word npiTextWordAttribute]]]
+        }
+        catch {npi_text_iter_stop -iter $iter}
+    }
+    ok_data [list \
+        file [json_string $file_name] \
+        line $line_number \
+        count [llength $rows] \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        words [json_array_raw $rows] \
+        summary [json_object [list file $file_name line $line_number count [llength $rows] truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc text_replace_line_action {file_name line_number content output overwrite} {
+    if {$output eq ""} {
+        fail_data "MISSING_FIELD" "args.output is required"
+        return
+    }
+    if {![text_line_handles $file_name $line_number file_hdl line_hdl]} {return}
+    set source_full_name [safe_text_property_str $file_hdl npiTextFileFullName]
+    if {$source_full_name ne "" && [file normalize $source_full_name] eq [file normalize $output]} {
+        fail_data "IN_PLACE_EDIT_FORBIDDEN" "text.replace_line writes a copy; args.output must differ from the source file"
+        return
+    }
+    if {![require_command npi_text_replace_line]} {return}
+    if {![prepare_output_file $output $overwrite]} {return}
+    set original [safe_text_property_str $line_hdl npiTextLineContent]
+    set replaced [npi_text_replace_line -ref $line_hdl -content $content]
+    if {$replaced eq ""} {
+        catch {file delete -force -- $output}
+        fail_data "TEXT_REPLACE_FAILED" "NPI Text Model failed to replace $file_name:$line_number"
+        return
+    }
+    set rendered [safe_text_property_str $file_hdl npiTextFileContent]
+    if {$rendered eq ""} {
+        catch {file delete -force -- $output}
+        fail_data "TEXT_RENDER_FAILED" "NPI Text Model returned empty file content after replacement"
+        return
+    }
+    set fp [open $output w]
+    fconfigure $fp -encoding utf-8 -translation lf
+    puts -nonewline $fp $rendered
+    close $fp
+    ok_data [list \
+        file [json_string $file_name] \
+        full_name [json_string $source_full_name] \
+        line $line_number \
+        original [json_string $original] \
+        replacement [json_string $content] \
+        output [json_string $output] \
+        summary [json_object [list file $file_name line $line_number output $output status written]]]
+}
+
+proc dm_writer_result {output_dir overwrite} {
+    if {[bool_value $overwrite]} {
+        return [npi_dm_write_text_mode -dir $output_dir -f]
+    }
+    return [npi_dm_write_text_mode -dir $output_dir]
+}
+
+proc dm_add_net_action {module_name net_name net_type packed_left packed_right output_dir overwrite} {
+    if {$module_name eq "" || $net_name eq ""} {
+        fail_data "MISSING_FIELD" "args.module and args.name are required"
+        return
+    }
+    if {![valid_hdl_identifier $net_name]} {
+        fail_data "INVALID_IDENTIFIER" "args.name must be a simple HDL identifier"
+        return
+    }
+    if {$net_type eq ""} {set net_type npiDmNetWire}
+    if {![valid_npi_enum $net_type npiDmNet]} {
+        fail_data "INVALID_ENUM" "args.net_type must be an npiDmNet* enum"
+        return
+    }
+    foreach command {npi_dm_module_by_name npi_dm_add_net npi_dm_write_text_mode} {
+        if {![require_command $command]} {return}
+    }
+    set module_hdl [npi_dm_module_by_name -name $module_name]
+    if {$module_hdl eq ""} {
+        fail_data "DM_MODULE_NOT_FOUND" "DM module not found: $module_name"
+        return
+    }
+    set data_type ""
+    if {$packed_left ne "" || $packed_right ne ""} {
+        if {![string is integer -strict $packed_left] || ![string is integer -strict $packed_right]} {
+            fail_data "INVALID_RANGE" "args.packed_left and args.packed_right must both be integers"
+            return
+        }
+        foreach command {npi_dm_create_range npi_dm_create_npiDmHandleArray npi_dm_create_npiDmBasicDataType} {
+            if {![require_command $command]} {return}
+        }
+        set range [npi_dm_create_range -left $packed_left -right $packed_right]
+        set packed_dim [npi_dm_create_npiDmHandleArray -array_list $range]
+        set data_type [npi_dm_create_npiDmBasicDataType -type npiDmDtDefault -sign npiDmSignNone -packed_dim $packed_dim]
+    }
+    if {![prepare_output_directory $output_dir $overwrite]} {return}
+    set added [npi_dm_add_net -scope $module_hdl -name $net_name -data_type $data_type -unpacked_dim "" -net_type $net_type]
+    if {$added eq ""} {
+        fail_data "DM_ADD_NET_FAILED" "failed to add net $net_name to module $module_name"
+        return
+    }
+    if {![dm_writer_result $output_dir $overwrite]} {
+        fail_data "DM_WRITE_FAILED" "failed to write modified design to $output_dir"
+        return
+    }
+    ok_data [list \
+        module [json_string $module_name] \
+        name [json_string $net_name] \
+        net_type [json_string $net_type] \
+        packed_left [expr {$packed_left eq "" ? "null" : $packed_left}] \
+        packed_right [expr {$packed_right eq "" ? "null" : $packed_right}] \
+        output_dir [json_string $output_dir] \
+        summary [json_object [list module $module_name name $net_name output_dir $output_dir status written]]]
+}
+
+proc dm_clone_module_action {module_name new_name output_dir overwrite} {
+    if {$module_name eq "" || $new_name eq ""} {
+        fail_data "MISSING_FIELD" "args.module and args.new_name are required"
+        return
+    }
+    if {![valid_hdl_identifier $new_name]} {
+        fail_data "INVALID_IDENTIFIER" "args.new_name must be a simple HDL identifier"
+        return
+    }
+    foreach command {npi_dm_module_by_name npi_dm_clone_module npi_dm_write_text_mode} {
+        if {![require_command $command]} {return}
+    }
+    set module_hdl [npi_dm_module_by_name -name $module_name]
+    if {$module_hdl eq ""} {
+        fail_data "DM_MODULE_NOT_FOUND" "DM module not found: $module_name"
+        return
+    }
+    if {![prepare_output_directory $output_dir $overwrite]} {return}
+    set clone [npi_dm_clone_module -module $module_hdl -name $new_name]
+    if {$clone eq ""} {
+        fail_data "DM_CLONE_FAILED" "failed to clone module $module_name as $new_name"
+        return
+    }
+    if {![dm_writer_result $output_dir $overwrite]} {
+        fail_data "DM_WRITE_FAILED" "failed to write cloned module to $output_dir"
+        return
+    }
+    ok_data [list \
+        module [json_string $module_name] \
+        new_name [json_string $new_name] \
+        output_dir [json_string $output_dir] \
+        summary [json_object [list module $module_name new_name $new_name output_dir $output_dir status written]]]
+}
+
+proc safe_vcs_get {hdl prop} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_vcs_get -property $prop -object $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq "" || $value eq "-1"} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc safe_vcs_get_str {hdl prop} {
+    if {$hdl eq ""} {return ""}
+    if {[catch {npi_vcs_get_str -property $prop -object $hdl} value]} {return ""}
+    return $value
+}
+
+proc vcs_summary_action {database} {
+    if {$database eq ""} {
+        fail_data "MISSING_FIELD" "target.daidir or args.database is required"
+        return
+    }
+    if {![require_command npi_vcs_open]} {return}
+    set db [npi_vcs_open -dir $database]
+    if {$db eq ""} {
+        fail_data "VCS_DB_OPEN_FAILED" "failed to open VCS database; compile with -Xdump_vcsdb: $database"
+        return
+    }
+    set comp [npi_vcs_handle -type npiVcsCompilation -refHandle $db]
+    set stats [npi_vcs_handle -type npiVcsDesignStats -refHandle $db]
+    set sim [npi_vcs_handle -type npiVcsSimulation -refHandle $db]
+    set compilation [json_object [list \
+        path [safe_vcs_get_str $comp npiVcsPath] \
+        options [safe_vcs_get_str $comp npiVcsOptions] \
+        warnings [safe_vcs_get $comp npiVcsWarningNo] \
+        errors [safe_vcs_get $comp npiVcsErrorNo] \
+        result [safe_vcs_get $comp npiVcsResult]]]
+    set design [json_object [list \
+        modules [safe_vcs_get $stats npiVcsModuleNo] \
+        verilog_files [safe_vcs_get $stats npiVcsVlogNo] \
+        systemverilog_files [safe_vcs_get $stats npiVcsSvNo]]]
+    set simulation [json_object [list \
+        path [safe_vcs_get_str $sim npiVcsPath] \
+        options [safe_vcs_get_str $sim npiVcsOptions] \
+        test_count [safe_vcs_get $sim npiVcsTestNo] \
+        waveform_count [safe_vcs_get $sim npiVcsWaveformNo]]]
+    set db_name [safe_vcs_get_str $db npiVcsName]
+    set tool_name [safe_vcs_get_str $db npiVcsToolName]
+    set tool_version [safe_vcs_get_str $db npiVcsToolVersion]
+    set warning_count [safe_vcs_get $comp npiVcsWarningNo]
+    set error_count [safe_vcs_get $comp npiVcsErrorNo]
+    set module_count [safe_vcs_get $stats npiVcsModuleNo]
+    catch {npi_vcs_close -db $db}
+    ok_data [list \
+        database [json_string $database] \
+        name [json_string $db_name] \
+        tool [json_object [list name $tool_name version $tool_version]] \
+        compilation $compilation \
+        design $design \
+        simulation $simulation \
+        summary [json_object [list database $database warnings $warning_count errors $error_count modules $module_count]]]
+}
+
+proc safe_pw_property {hdl prop} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_pw_property -type $prop -ref $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq ""} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc safe_pw_property_str {hdl prop} {
+    if {$hdl eq ""} {return ""}
+    if {[catch {npi_pw_property_str -type $prop -ref $hdl} value]} {return ""}
+    return $value
+}
+
+proc power_handle_json {hdl} {
+    return [json_object [list \
+        name [safe_pw_property_str $hdl npiPwName] \
+        full_name [safe_pw_property_str $hdl npiPwFullName] \
+        type [safe_pw_property_str $hdl npiPwType] \
+        file [safe_pw_property_str $hdl npiPwDefFile] \
+        line [safe_pw_property $hdl npiPwLineNo]]]
+}
+
+proc power_resolve_action {name object_type} {
+    if {$name eq ""} {
+        fail_data "MISSING_FIELD" "args.name is required"
+        return
+    }
+    if {![valid_npi_enum $object_type npiPw]} {
+        fail_data "INVALID_ENUM" "args.object_type must be an npiPw* enum"
+        return
+    }
+    if {![require_command npi_pw_handle_by_name]} {return}
+    if {$object_type eq ""} {
+        set hdl [npi_pw_handle_by_name -name $name]
+    } else {
+        set hdl [npi_pw_handle_by_name -name $name -type $object_type]
+    }
+    if {$hdl eq ""} {
+        fail_data "POWER_OBJECT_NOT_FOUND" "power object not found: $name"
+        return
+    }
+    ok_data [list \
+        query [json_string $name] \
+        requested_type [json_string $object_type] \
+        object [power_handle_json $hdl] \
+        summary [json_object [list name $name status resolved]]]
+}
+
+proc power_list_action {name object_type max_rows} {
+    if {$name eq "" || $object_type eq ""} {
+        fail_data "MISSING_FIELD" "args.name and args.object_type are required"
+        return
+    }
+    if {![valid_npi_enum $object_type npiPw]} {
+        fail_data "INVALID_ENUM" "args.object_type must be an npiPw* enum"
+        return
+    }
+    foreach command {npi_pw_handle_by_name npi_pw_iter_start npi_pw_iter_next npi_pw_iter_stop} {
+        if {![require_command $command]} {return}
+    }
+    set ref [npi_pw_handle_by_name -name $name]
+    if {$ref eq ""} {
+        fail_data "POWER_OBJECT_NOT_FOUND" "power reference object not found: $name"
+        return
+    }
+    set iter [npi_pw_iter_start -type $object_type -ref $ref]
+    set rows {}
+    set limit [positive_limit $max_rows 200]
+    set truncated 0
+    if {$iter ne ""} {
+        while {1} {
+            set child [npi_pw_iter_next -iter $iter]
+            if {$child eq ""} {break}
+            if {[llength $rows] >= $limit} {set truncated 1; break}
+            lappend rows [power_handle_json $child]
+        }
+        catch {npi_pw_iter_stop -iter $iter}
+    }
+    ok_data [list \
+        reference [json_string $name] \
+        object_type [json_string $object_type] \
+        count [llength $rows] \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        items [json_array_raw $rows] \
+        summary [json_object [list reference $name object_type $object_type count [llength $rows] truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc safe_crdb_get {hdl prop} {
+    if {$hdl eq "" || $hdl eq "0"} {return "__JSON_NULL__"}
+    if {[catch {npi_crdb_get -type $prop -ref $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq ""} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc safe_crdb_get_str {hdl prop} {
+    if {$hdl eq "" || $hdl eq "0"} {return ""}
+    if {[catch {npi_crdb_get_str -type $prop -ref $hdl} value]} {return ""}
+    return $value
+}
+
+proc crdb_handle_json {hdl} {
+    return [json_object [list \
+        name [safe_crdb_get_str $hdl npiCrdbName] \
+        full_name [safe_crdb_get_str $hdl npiCrdbFullName] \
+        type [safe_crdb_get_str $hdl npiCrdbType] \
+        definition [safe_crdb_get_str $hdl npiCrdbDefName] \
+        level [safe_crdb_get $hdl npiCrdbGRType] \
+        language [safe_crdb_get $hdl npiCrdbLangType] \
+        size [safe_crdb_get $hdl npiCrdbSize] \
+        signal_type [safe_crdb_get $hdl npiCrdbSigType] \
+        port_direction [safe_crdb_get $hdl npiCrdbPortDir]]]
+}
+
+proc crdb_open_and_resolve {database name level db_var hdl_var} {
+    upvar 1 $db_var db
+    upvar 1 $hdl_var hdl
+    set db ""
+    set hdl ""
+    if {$database eq "" || $name eq ""} {
+        fail_data "MISSING_FIELD" "args.crdb and args.name are required"
+        return 0
+    }
+    set level [string toupper $level]
+    if {$level ne "RTL" && $level ne "GATE"} {
+        fail_data "INVALID_ENUM" "args.level must be RTL or GATE"
+        return 0
+    }
+    if {![require_command npi_crdb_open]} {return 0}
+    set db [npi_crdb_open -name $database]
+    if {$db eq "" || $db eq "0"} {
+        fail_data "CRDB_OPEN_FAILED" "failed to open CRDB: $database"
+        return 0
+    }
+    set native_level [expr {$level eq "RTL" ? "npiCrdbLevelRTL" : "npiCrdbLevelGate"}]
+    set hdl [npi_crdb_handle_by_name -db $db -name $name -level $native_level]
+    if {$hdl eq "" || $hdl eq "0"} {
+        set hdl [npi_crdb_handle_by_name -db $db -name $name -level $level]
+    }
+    if {$hdl eq "" || $hdl eq "0"} {
+        catch {npi_crdb_close -crdb $db}
+        fail_data "CRDB_OBJECT_NOT_FOUND" "CRDB object not found at $level level: $name"
+        return 0
+    }
+    return 1
+}
+
+proc crdb_resolve_action {database name level} {
+    if {![crdb_open_and_resolve $database $name $level db hdl]} {return}
+    set object_json [crdb_handle_json $hdl]
+    catch {npi_crdb_release_handle -handle $hdl}
+    catch {npi_crdb_close -crdb $db}
+    ok_data [list \
+        database [json_string $database] \
+        query [json_string $name] \
+        level [json_string [string toupper $level]] \
+        object $object_json \
+        summary [json_object [list name $name level [string toupper $level] status resolved]]]
+}
+
+proc crdb_correlates_action {database name level max_rows} {
+    if {![crdb_open_and_resolve $database $name $level db hdl]} {return}
+    set iter [npi_crdb_iter_start -type npiCrdbCorrelate -ref $hdl]
+    set rows {}
+    set limit [positive_limit $max_rows 200]
+    set truncated 0
+    if {$iter ne "" && $iter ne "0"} {
+        while {1} {
+            set mapped [npi_crdb_iter_next -iter $iter]
+            if {$mapped eq "" || $mapped eq "0"} {break}
+            if {[llength $rows] >= $limit} {set truncated 1; break}
+            lappend rows [crdb_handle_json $mapped]
+            catch {npi_crdb_release_handle -handle $mapped}
+        }
+        catch {npi_crdb_iter_stop -iter $iter}
+    }
+    if {[llength $rows] == 0 && [llength [info commands ::npi_L1::npi_crdb_corr_sig]] != 0} {
+        set correlated_handles {}
+        if {[::npi_L1::npi_crdb_corr_sig $hdl correlated_handles] > 0} {
+            foreach mapped $correlated_handles {
+                if {[llength $rows] >= $limit} {
+                    set truncated 1
+                    catch {npi_crdb_release_handle -handle $mapped}
+                    continue
+                }
+                lappend rows [crdb_handle_json $mapped]
+                catch {npi_crdb_release_handle -handle $mapped}
+            }
+        }
+    }
+    catch {npi_crdb_release_handle -handle $hdl}
+    catch {npi_crdb_close -crdb $db}
+    ok_data [list \
+        database [json_string $database] \
+        query [json_string $name] \
+        level [json_string [string toupper $level]] \
+        count [llength $rows] \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        correlated [json_array_raw $rows] \
+        summary [json_object [list name $name level [string toupper $level] count [llength $rows] truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc transaction_writer_action {output overwrite unit begin_time stream transaction_plan tag_plan relation_plan} {
+    if {$stream eq ""} {
+        fail_data "MISSING_FIELD" "args.stream is required"
+        return
+    }
+    if {![regexp {^(1|10|100)(s|ms|us|ns|ps|fs)$} $unit]} {
+        fail_data "INVALID_TIME_UNIT" "args.unit must match (1|10|100)(s|ms|us|ns|ps|fs)"
+        return
+    }
+    if {![string is integer -strict $begin_time] || $begin_time < 0} {
+        fail_data "INVALID_TIME" "args.begin_time must be a non-negative integer"
+        return
+    }
+    foreach command {npi_fsdbw_open npi_fsdbw_stream_begin npi_fsdbw_stream_end npi_fsdbw_incr_time npi_fsdbw_trans_begin npi_fsdbw_set_label npi_fsdbw_add_tag npi_fsdbw_trans_end npi_fsdbw_add_relation npi_fsdbw_close} {
+        if {![require_command $command]} {return}
+    }
+    if {[catch {set transaction_rows [read_plan_rows $transaction_plan 4]} plan_error]} {
+        fail_data "INVALID_PLAN" $plan_error
+        return
+    }
+    if {[llength $transaction_rows] == 0} {
+        fail_data "MISSING_FIELD" "args.transactions must contain at least one transaction"
+        return
+    }
+    set tag_rows {}
+    if {$tag_plan ne ""} {
+        if {[catch {set tag_rows [read_plan_rows $tag_plan 2]} plan_error]} {
+            fail_data "INVALID_PLAN" $plan_error
+            return
+        }
+    }
+    set relation_rows {}
+    if {$relation_plan ne ""} {
+        if {[catch {set relation_rows [read_plan_rows $relation_plan 3]} plan_error]} {
+            fail_data "INVALID_PLAN" $plan_error
+            return
+        }
+    }
+    if {![prepare_output_file $output $overwrite]} {return}
+    set file_hdl ""
+    set stream_hdl ""
+    set transaction_handles {}
+    set current_time $begin_time
+    set rc [catch {
+        set file_hdl [npi_fsdbw_open -name $output -unit $unit -time $begin_time]
+        if {$file_hdl eq ""} {error "npi_fsdbw_open failed for $output"}
+        set stream_hdl [npi_fsdbw_stream_begin -file $file_hdl -name $stream]
+        if {$stream_hdl eq ""} {error "npi_fsdbw_stream_begin failed for $stream"}
+        if {![npi_fsdbw_stream_end -stream $stream_hdl]} {error "npi_fsdbw_stream_end failed for $stream"}
+        set transaction_index 0
+        foreach row $transaction_rows {
+            lassign $row start_delta duration transaction_type label_hex
+            if {![string is integer -strict $start_delta] || $start_delta < 0} {error "invalid start_delta at transaction $transaction_index"}
+            if {![string is integer -strict $duration] || $duration <= 0} {error "invalid duration at transaction $transaction_index"}
+            if {![valid_npi_enum $transaction_type npiFsdbwTrans]} {error "invalid transaction type at transaction $transaction_index"}
+            if {$start_delta > 0 && ![npi_fsdbw_incr_time -file $file_hdl -time $start_delta]} {error "failed to advance start_delta at transaction $transaction_index"}
+            incr current_time $start_delta
+            set transaction_hdl [npi_fsdbw_trans_begin -stream $stream_hdl -type $transaction_type]
+            if {$transaction_hdl eq ""} {error "failed to begin transaction $transaction_index"}
+            set label [decode_hex_utf8 $label_hex]
+            if {$label ne "" && ![npi_fsdbw_set_label -trans $transaction_hdl -label $label]} {error "failed to set label at transaction $transaction_index"}
+            foreach tag_row $tag_rows {
+                lassign $tag_row tag_index tag_hex
+                if {$tag_index == $transaction_index} {
+                    set tag [decode_hex_utf8 $tag_hex]
+                    if {$tag eq "" || ![npi_fsdbw_add_tag -trans $transaction_hdl -tag $tag]} {error "failed to add tag at transaction $transaction_index"}
+                }
+            }
+            if {![npi_fsdbw_incr_time -file $file_hdl -time $duration]} {error "failed to advance duration at transaction $transaction_index"}
+            incr current_time $duration
+            if {![npi_fsdbw_trans_end -trans $transaction_hdl]} {error "failed to end transaction $transaction_index"}
+            lappend transaction_handles $transaction_hdl
+            incr transaction_index
+        }
+        foreach row $relation_rows {
+            lassign $row relation_hex master_index slave_index
+            if {![string is integer -strict $master_index] || ![string is integer -strict $slave_index]} {error "relation indexes must be integers"}
+            if {$master_index < 0 || $slave_index < 0 || $master_index >= [llength $transaction_handles] || $slave_index >= [llength $transaction_handles]} {error "relation index is outside args.transactions"}
+            set relation [decode_hex_utf8 $relation_hex]
+            if {$relation eq "" || ![npi_fsdbw_add_relation -relation $relation -master [lindex $transaction_handles $master_index] -slave [lindex $transaction_handles $slave_index]]} {error "failed to add relation between $master_index and $slave_index"}
+        }
+    } writer_error writer_options]
+    if {$file_hdl ne ""} {
+        set close_rc [catch {npi_fsdbw_close -file $file_hdl} close_error]
+        if {$close_rc && !$rc} {
+            set rc 1
+            set writer_error "failed to close transaction FSDB: $close_error"
+        }
+    }
+    if {$rc} {
+        catch {file delete -force -- $output}
+        fail_data "TRANSACTION_WRITER_FAILED" $writer_error
+        return
+    }
+    ok_data [list \
+        output [json_string $output] \
+        unit [json_string $unit] \
+        begin_time $begin_time \
+        end_time $current_time \
+        stream [json_string $stream] \
+        transaction_count [llength $transaction_rows] \
+        relation_count [llength $relation_rows] \
+        summary [json_object [list output $output stream $stream transaction_count [llength $transaction_rows] relation_count [llength $relation_rows] status written]]]
+}
+
+proc fsdb_writer_create_scope_action {output overwrite unit begin_time end_time_delta operation_plan} {
+    if {![regexp {^(1|10|100)(s|ms|us|ns|ps|fs)$} $unit]} {
+        fail_data "INVALID_TIME_UNIT" "args.unit must match (1|10|100)(s|ms|us|ns|ps|fs)"
+        return
+    }
+    if {![string is integer -strict $begin_time] || $begin_time < 0 || ![string is integer -strict $end_time_delta] || $end_time_delta < 0} {
+        fail_data "INVALID_TIME" "args.begin_time and args.end_time_delta must be non-negative integers"
+        return
+    }
+    foreach command {npi_fsdbw_create npi_fsdbw_begin_hierarchy_creation npi_fsdbw_create_scope npi_fsdbw_up_scope npi_fsdbw_end_hierarchy_creation npi_fsdbw_incr_time npi_fsdbw_close} {
+        if {![require_command $command]} {return}
+    }
+    if {[catch {set operation_rows [read_plan_rows $operation_plan 4]} plan_error]} {
+        fail_data "INVALID_PLAN" $plan_error
+        return
+    }
+    if {[llength $operation_rows] == 0} {
+        fail_data "MISSING_FIELD" "args.operations or args.scopes must contain at least one scope"
+        return
+    }
+    if {![prepare_output_file $output $overwrite]} {return}
+    set file_hdl ""
+    set scope_count 0
+    set up_count 0
+    set depth 0
+    set rc [catch {
+        set file_hdl [npi_fsdbw_create -name $output -unit $unit -time $begin_time]
+        if {$file_hdl eq ""} {error "npi_fsdbw_create failed for $output"}
+        npi_fsdbw_begin_hierarchy_creation -file $file_hdl
+        foreach row $operation_rows {
+            lassign $row operation object_type name_hex definition_hex
+            if {$operation eq "up"} {
+                if {$depth <= 0 || ![npi_fsdbw_up_scope -file $file_hdl]} {error "cannot move above the FSDB hierarchy root"}
+                incr depth -1
+                incr up_count
+                continue
+            }
+            if {$operation ne "scope"} {error "unsupported FSDB hierarchy operation: $operation"}
+            if {![valid_npi_enum $object_type npiFsdbScope]} {error "invalid FSDB scope type: $object_type"}
+            set name [decode_hex_utf8 $name_hex]
+            set definition [decode_hex_utf8 $definition_hex]
+            if {$name eq ""} {error "FSDB scope name cannot be empty"}
+            if {$definition eq ""} {
+                set created [npi_fsdbw_create_scope -file $file_hdl -type $object_type -name $name]
+            } else {
+                set created [npi_fsdbw_create_scope -file $file_hdl -type $object_type -name $name -def_name $definition]
+            }
+            if {!$created} {error "failed to create FSDB scope: $name"}
+            incr depth
+            incr scope_count
+        }
+        npi_fsdbw_end_hierarchy_creation -file $file_hdl
+        if {$end_time_delta > 0 && ![npi_fsdbw_incr_time -file $file_hdl -time $end_time_delta]} {error "failed to advance FSDB end time"}
+    } writer_error writer_options]
+    if {$file_hdl ne ""} {
+        set close_rc [catch {npi_fsdbw_close -file $file_hdl} close_error]
+        if {$close_rc && !$rc} {
+            set rc 1
+            set writer_error "failed to close signal FSDB: $close_error"
+        }
+    }
+    if {$rc} {
+        catch {file delete -force -- $output}
+        fail_data "FSDB_WRITER_FAILED" $writer_error
+        return
+    }
+    ok_data [list \
+        output [json_string $output] \
+        unit [json_string $unit] \
+        begin_time $begin_time \
+        end_time [expr {$begin_time + $end_time_delta}] \
+        scope_count $scope_count \
+        up_count $up_count \
+        summary [json_object [list output $output scope_count $scope_count up_count $up_count status written]]]
+}
+
+proc npi_capabilities_action {} {
+    set domains {
+        language {npi_handle_by_name npi_get npi_get_str npi_iterate npi_scan}
+        netlist {npi_nl_handle_by_name npi_nl_get npi_nl_get_str npi_nl_iterate npi_nl_scan}
+        text {npi_text_file_by_name npi_text_line_by_number npi_text_iter_start npi_text_replace_line}
+        design_manipulation {npi_dm_module_by_name npi_dm_add_net npi_dm_clone_module npi_dm_write_text_mode}
+        fsdb_reader {npi_fsdb_open npi_fsdb_sig_by_name npi_fsdb_create_vct npi_fsdb_vct_value}
+        transaction_writer {npi_fsdbw_open npi_fsdbw_stream_begin npi_fsdbw_trans_begin npi_fsdbw_trans_end}
+        fsdb_writer {npi_fsdbw_create npi_fsdbw_begin_hierarchy_creation npi_fsdbw_create_scope}
+        coverage {npi_cov_open npi_cov_get npi_cov_iter_start npi_cov_merge_test}
+        vcs {npi_vcs_open npi_vcs_handle npi_vcs_get npi_vcs_get_str}
+        power {npi_pw_handle_by_name npi_pw_iter_start npi_pw_property npi_pw_property_str}
+        crdb {npi_crdb_open npi_crdb_handle_by_name npi_crdb_iter_start npi_crdb_get_str}
+    }
+    set rows {}
+    set available_domains 0
+    foreach {domain commands} $domains {
+        set command_rows {}
+        set available 1
+        foreach command $commands {
+            set present [command_available $command]
+            if {!$present} {set available 0}
+            lappend command_rows [json_object [list command $command available [expr {$present ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]
+        }
+        if {$available} {incr available_domains}
+        lappend rows [json_object_raw [list \
+            domain [json_string $domain] \
+            available [expr {$available ? "true" : "false"}] \
+            commands [json_array_raw $command_rows]]]
+    }
+    ok_data [list \
+        domains [json_array_raw $rows] \
+        summary [json_object [list domain_count [expr {[llength $domains] / 2}] available_domain_count $available_domains]]]
+}
+
 proc main {} {
     source_l1
     set action [env_or_empty KDEBUG_TCL_ACTION]
@@ -618,6 +1503,36 @@ proc main {} {
         scope_list_action [env_or_empty KDEBUG_TCL_FSDB] [env_or_empty KDEBUG_TCL_SCOPE] [env_or_empty KDEBUG_TCL_MAX_DEPTH] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "trace.active_driver" || $action eq "trace.active_driver_chain"} {
         active_trace_action [env_or_empty KDEBUG_TCL_SIGNAL] [env_or_empty KDEBUG_TCL_TIME]
+    } elseif {$action eq "npi.capabilities"} {
+        npi_capabilities_action
+    } elseif {$action eq "netlist.resolve"} {
+        netlist_resolve_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE]
+    } elseif {$action eq "netlist.iterate"} {
+        netlist_iterate_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "text.line"} {
+        text_line_action [env_or_empty KDEBUG_TCL_FILE] [env_or_empty KDEBUG_TCL_LINE]
+    } elseif {$action eq "text.words"} {
+        text_words_action [env_or_empty KDEBUG_TCL_FILE] [env_or_empty KDEBUG_TCL_LINE] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "text.replace_line"} {
+        text_replace_line_action [env_or_empty KDEBUG_TCL_FILE] [env_or_empty KDEBUG_TCL_LINE] [env_or_empty KDEBUG_TCL_CONTENT] [env_or_empty KDEBUG_TCL_OUTPUT] [env_or_empty KDEBUG_TCL_OVERWRITE]
+    } elseif {$action eq "dm.add_net"} {
+        dm_add_net_action [env_or_empty KDEBUG_TCL_MODULE] [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_NET_TYPE] [env_or_empty KDEBUG_TCL_PACKED_LEFT] [env_or_empty KDEBUG_TCL_PACKED_RIGHT] [env_or_empty KDEBUG_TCL_OUTPUT_DIR] [env_or_empty KDEBUG_TCL_OVERWRITE]
+    } elseif {$action eq "dm.clone_module"} {
+        dm_clone_module_action [env_or_empty KDEBUG_TCL_MODULE] [env_or_empty KDEBUG_TCL_NEW_NAME] [env_or_empty KDEBUG_TCL_OUTPUT_DIR] [env_or_empty KDEBUG_TCL_OVERWRITE]
+    } elseif {$action eq "vcs.summary"} {
+        vcs_summary_action [env_or_empty KDEBUG_TCL_DATABASE]
+    } elseif {$action eq "power.resolve"} {
+        power_resolve_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE]
+    } elseif {$action eq "power.list"} {
+        power_list_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "crdb.resolve"} {
+        crdb_resolve_action [env_or_empty KDEBUG_TCL_CRDB] [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_LEVEL]
+    } elseif {$action eq "crdb.correlates"} {
+        crdb_correlates_action [env_or_empty KDEBUG_TCL_CRDB] [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_LEVEL] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "transaction.writer.create"} {
+        transaction_writer_action [env_or_empty KDEBUG_TCL_OUTPUT] [env_or_empty KDEBUG_TCL_OVERWRITE] [env_or_empty KDEBUG_TCL_UNIT] [env_or_empty KDEBUG_TCL_BEGIN_TIME] [env_or_empty KDEBUG_TCL_STREAM] [env_or_empty KDEBUG_TCL_TRANSACTION_PLAN] [env_or_empty KDEBUG_TCL_TAG_PLAN] [env_or_empty KDEBUG_TCL_RELATION_PLAN]
+    } elseif {$action eq "fsdb.writer.create_scope"} {
+        fsdb_writer_create_scope_action [env_or_empty KDEBUG_TCL_OUTPUT] [env_or_empty KDEBUG_TCL_OVERWRITE] [env_or_empty KDEBUG_TCL_UNIT] [env_or_empty KDEBUG_TCL_BEGIN_TIME] [env_or_empty KDEBUG_TCL_END_TIME_DELTA] [env_or_empty KDEBUG_TCL_OPERATION_PLAN]
     } else {
         fail_data "NOT_IMPLEMENTED" "Tcl NPI backend does not implement action: $action"
     }

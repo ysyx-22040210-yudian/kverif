@@ -1798,6 +1798,250 @@
       "required_args": ["stream"]
     },
     {
+      "name": "npi.capabilities",
+      "category": "builtin",
+      "status": "experimental",
+      "requires": "none",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/npi.capabilities.request.schema.json",
+        "response": "schemas/v1/actions/npi.capabilities.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/npi.capabilities.basic.json"],
+        "response": ["examples/responses/npi.capabilities.basic.json"]
+      }
+    },
+    {
+      "name": "netlist.resolve",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/netlist.resolve.request.schema.json",
+        "response": "schemas/v1/actions/netlist.resolve.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/netlist.resolve.basic.json"],
+        "response": ["examples/responses/netlist.resolve.basic.json"]
+      },
+      "required_args": ["name"]
+    },
+    {
+      "name": "netlist.iterate",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/netlist.iterate.request.schema.json",
+        "response": "schemas/v1/actions/netlist.iterate.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/netlist.iterate.basic.json"],
+        "response": ["examples/responses/netlist.iterate.basic.json"]
+      },
+      "required_args": ["object_type"]
+    },
+    {
+      "name": "text.line",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/text.line.request.schema.json",
+        "response": "schemas/v1/actions/text.line.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/text.line.basic.json"],
+        "response": ["examples/responses/text.line.basic.json"]
+      },
+      "required_args": ["file", "line"]
+    },
+    {
+      "name": "text.words",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/text.words.request.schema.json",
+        "response": "schemas/v1/actions/text.words.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/text.words.basic.json"],
+        "response": ["examples/responses/text.words.basic.json"]
+      },
+      "required_args": ["file", "line"]
+    },
+    {
+      "name": "text.replace_line",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/text.replace_line.request.schema.json",
+        "response": "schemas/v1/actions/text.replace_line.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/text.replace_line.basic.json"],
+        "response": ["examples/responses/text.replace_line.basic.json"]
+      },
+      "required_args": ["file", "line", "content", "output"]
+    },
+    {
+      "name": "dm.add_net",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/dm.add_net.request.schema.json",
+        "response": "schemas/v1/actions/dm.add_net.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/dm.add_net.basic.json"],
+        "response": ["examples/responses/dm.add_net.basic.json"]
+      },
+      "required_args": ["module", "name", "output_dir"]
+    },
+    {
+      "name": "dm.clone_module",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/dm.clone_module.request.schema.json",
+        "response": "schemas/v1/actions/dm.clone_module.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/dm.clone_module.basic.json"],
+        "response": ["examples/responses/dm.clone_module.basic.json"]
+      },
+      "required_args": ["module", "new_name", "output_dir"]
+    },
+    {
+      "name": "vcs.summary",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/vcs.summary.request.schema.json",
+        "response": "schemas/v1/actions/vcs.summary.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/vcs.summary.basic.json"],
+        "response": ["examples/responses/vcs.summary.basic.json"]
+      }
+    },
+    {
+      "name": "power.resolve",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/power.resolve.request.schema.json",
+        "response": "schemas/v1/actions/power.resolve.response.schema.json"
+      },
+      "examples": {
+        "request": [
+          "examples/requests/power.resolve.source.json",
+          "examples/requests/power.resolve.basic.json"
+        ],
+        "response": ["examples/responses/power.resolve.basic.json"]
+      },
+      "required_args": ["name"]
+    },
+    {
+      "name": "power.list",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/power.list.request.schema.json",
+        "response": "schemas/v1/actions/power.list.response.schema.json"
+      },
+      "examples": {
+        "request": [
+          "examples/requests/power.list.source.json",
+          "examples/requests/power.list.basic.json"
+        ],
+        "response": ["examples/responses/power.list.basic.json"]
+      },
+      "required_args": ["name", "object_type"]
+    },
+    {
+      "name": "crdb.resolve",
+      "category": "design",
+      "status": "experimental",
+      "requires": "none",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/crdb.resolve.request.schema.json",
+        "response": "schemas/v1/actions/crdb.resolve.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/crdb.resolve.basic.json"],
+        "response": ["examples/responses/crdb.resolve.basic.json"]
+      },
+      "required_args": ["crdb", "name"]
+    },
+    {
+      "name": "crdb.correlates",
+      "category": "design",
+      "status": "experimental",
+      "requires": "none",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/crdb.correlates.request.schema.json",
+        "response": "schemas/v1/actions/crdb.correlates.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/crdb.correlates.basic.json"],
+        "response": ["examples/responses/crdb.correlates.basic.json"]
+      },
+      "required_args": ["crdb", "name"]
+    },
+    {
+      "name": "transaction.writer.create",
+      "category": "waveform",
+      "status": "experimental",
+      "requires": "none",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/transaction.writer.create.request.schema.json",
+        "response": "schemas/v1/actions/transaction.writer.create.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/transaction.writer.create.basic.json"],
+        "response": ["examples/responses/transaction.writer.create.basic.json"]
+      },
+      "required_args": ["output", "stream", "transactions"]
+    },
+    {
+      "name": "fsdb.writer.create_scope",
+      "category": "waveform",
+      "status": "experimental",
+      "requires": "none",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/fsdb.writer.create_scope.request.schema.json",
+        "response": "schemas/v1/actions/fsdb.writer.create_scope.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/fsdb.writer.create_scope.basic.json"],
+        "response": ["examples/responses/fsdb.writer.create_scope.basic.json"]
+      },
+      "required_args": ["output"]
+    },
+    {
       "name": "signal.search",
       "category": "design",
       "status": "removed",

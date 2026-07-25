@@ -1,0 +1,31 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "fsdb.writer.create_scope",
+  "args": {
+    "output": "/data/out/hierarchy.fsdb",
+    "overwrite": false,
+    "unit": "1ns",
+    "begin_time": 0,
+    "end_time_delta": 100,
+    "operations": [
+      {
+        "op": "scope",
+        "type": "npiFsdbScopeSvModule",
+        "name": "top"
+      },
+      {
+        "op": "scope",
+        "type": "npiFsdbScopeSvModule",
+        "name": "u_a"
+      },
+      {
+        "op": "up"
+      },
+      {
+        "op": "scope",
+        "type": "npiFsdbScopeSvModule",
+        "name": "u_b"
+      }
+    ]
+  }
+}

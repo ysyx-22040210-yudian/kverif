@@ -1,0 +1,23 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "dm.clone_module",
+  "summary": {
+    "module": "alu",
+    "new_name": "alu_debug",
+    "output_dir": "/data/out/dm_clone",
+    "status": "written"
+  },
+  "data": {
+    "module": "alu",
+    "new_name": "alu_debug",
+    "output_dir": "/data/out/dm_clone",
+    "summary": {
+      "module": "alu",
+      "new_name": "alu_debug",
+      "output_dir": "/data/out/dm_clone",
+      "status": "written"
+    }
+  },
+  "warnings": []
+}

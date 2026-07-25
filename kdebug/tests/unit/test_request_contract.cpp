@@ -67,6 +67,12 @@ int main() {
     resource = resolver.resolve(design, *trace_spec);
     assert(resource.ok && resource.context.design);
 
+    RequestEnvelope source_design = value;
+    source_design.action = "trace.driver";
+    source_design.target = {{"filelist", "/data/rtl/run.f"}};
+    resource = resolver.resolve(source_design, *trace_spec);
+    assert(resource.ok && resource.context.design);
+
     RequestEnvelope combined = value;
     combined.action = "trace.active_driver";
     combined.target = {

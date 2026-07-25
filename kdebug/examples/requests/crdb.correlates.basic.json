@@ -1,0 +1,12 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "crdb.correlates",
+  "args": {
+    "crdb": "/data/build/dut.crdb",
+    "name": "top.u_dut.ready",
+    "level": "RTL"
+  },
+  "limits": {
+    "max_rows": 100
+  }
+}

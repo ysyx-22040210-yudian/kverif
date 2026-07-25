@@ -1,0 +1,23 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "text.line",
+  "summary": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12,
+    "word_count": 5
+  },
+  "data": {
+    "file": "/data/project/rtl/top.sv",
+    "full_name": "/data/project/rtl/top.sv",
+    "line": 12,
+    "content": "  assign ready = valid;",
+    "word_count": 5,
+    "summary": {
+      "file": "/data/project/rtl/top.sv",
+      "line": 12,
+      "word_count": 5
+    }
+  },
+  "warnings": []
+}

@@ -15,7 +15,7 @@ example 和 contract test 迁移使用。状态定义：
 | resource | 含义 |
 | --- | --- |
 | `none` | 不需要 `target` 资源 |
-| `design` | 需要 `target.daidir` 或包含 design 的 `session_id` |
+| `design` | 需要 `target.daidir`、`target.filelist` 或包含 design 的 `session_id` |
 | `waveform` | 需要 `target.fsdb` 或包含 waveform 的 `session_id` |
 | `combined` | 需要 `target.daidir` + `target.fsdb`，或包含两者的 session |
 | `session` | 主要操作 top-level session registry |
@@ -28,6 +28,7 @@ example 和 contract test 迁移使用。状态定义：
 | `schema` | builtin | stable | none | top-level catalog | regression |
 | `actions` | builtin | stable | none | top-level catalog | regression |
 | `batch` | builtin | stable | none | top-level dispatcher | partial |
+| `npi.capabilities` | builtin | experimental | none | Verdi 2018 Tcl NPI capability probe | VM PASS 2026-07-24 |
 | `session.open` | session | stable | any | dispatcher + backend session managers | regression |
 | `session.list` | session | stable | session | unified engine session registry | partial |
 | `session.doctor` | session | stable | session | dispatcher + backend health | partial |
@@ -60,6 +61,18 @@ example 和 contract test 迁移使用。状态定义：
 | `port.trace` | design | stable | design | design engine forward | partial |
 | `instance.map` | design | stable | design | design engine forward | partial |
 | `interface.resolve` | design | stable | design | design engine forward | partial |
+| `netlist.resolve` | design | experimental | design | Tcl NPI Netlist Model lookup | VM PASS 2026-07-24 |
+| `netlist.iterate` | design | experimental | design | Tcl NPI Netlist Model iterator | VM PASS 2026-07-24 |
+| `text.line` | design | experimental | design | Tcl NPI Text Model line lookup | VM PASS 2026-07-24 |
+| `text.words` | design | experimental | design | Tcl NPI Text Model word iterator | VM PASS 2026-07-24 |
+| `text.replace_line` | design | experimental | design | Tcl NPI Text Model copy-on-write edit | VM PASS 2026-07-24 |
+| `dm.add_net` | design | experimental | design | Tcl NPI DM add/write flow | VM PASS 2026-07-24 |
+| `dm.clone_module` | design | experimental | design | Tcl NPI DM clone/write flow | VM PASS 2026-07-24 |
+| `vcs.summary` | design | experimental | design | Tcl NPI VCS Model summary | VM PASS 2026-07-24 |
+| `power.resolve` | design | experimental | design | Tcl NPI Power Model lookup | VM license-blocked 2026-07-24 |
+| `power.list` | design | experimental | design | Tcl NPI Power Model iterator | VM license-blocked 2026-07-24 |
+| `crdb.resolve` | design | experimental | none | Tcl NPI CRDB lookup | VM PASS 2026-07-24 |
+| `crdb.correlates` | design | experimental | none | Tcl NPI CRDB correlation iterator | VM PASS 2026-07-24 |
 
 ## Waveform Actions
 
@@ -119,6 +132,8 @@ example 和 contract test 迁移使用。状态定义：
 | `stream.validate` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.query` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.export` | waveform | stable | waveform | waveform engine forward | synthetic |
+| `transaction.writer.create` | waveform | experimental | none | Tcl NPI transaction FSDB writer | VM PASS 2026-07-24 |
+| `fsdb.writer.create_scope` | waveform | experimental | none | Tcl NPI signal FSDB hierarchy writer | VM PASS 2026-07-24 |
 
 ## Removed Actions
 

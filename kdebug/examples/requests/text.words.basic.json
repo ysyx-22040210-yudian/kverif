@@ -1,0 +1,14 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "text.words",
+  "target": {
+    "daidir": "/data/build/simv.daidir"
+  },
+  "args": {
+    "file": "/data/project/rtl/top.sv",
+    "line": 12
+  },
+  "limits": {
+    "max_rows": 50
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "crdb.correlates",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "name": "npi_crdb_top.state",
+    "level": "RTL",
+    "count": 1,
+    "truncated": false
+  },
+  "data": {
+    "database": "/home/host/kverif_npi_action_test/crdb/dut.crdb",
+    "query": "npi_crdb_top.state",
+    "level": "RTL",
+    "count": 1,
+    "truncated": false,
+    "correlated": [
+      {
+        "name": "state",
+        "full_name": "npi_crdb_top.state",
+        "type": "npiCrdbSignal",
+        "definition": "",
+        "level": 2,
+        "language": 1,
+        "size": 1,
+        "signal_type": 1,
+        "port_direction": 0
+      }
+    ],
+    "summary": {
+      "name": "npi_crdb_top.state",
+      "level": "RTL",
+      "count": 1,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

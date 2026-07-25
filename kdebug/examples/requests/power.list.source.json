@@ -1,0 +1,21 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "power.list",
+  "target": {
+    "filelist": "/data/project/power/run.f",
+    "upf": "/data/project/power/design.upf",
+    "workdir": "/data/project/power",
+    "defines": [
+      "NOVAS_UPF_PKG"
+    ],
+    "top": "system",
+    "upf_version": "2.0"
+  },
+  "args": {
+    "name": "system/PD_TOP",
+    "object_type": "npiPwElement"
+  },
+  "limits": {
+    "max_rows": 100
+  }
+}

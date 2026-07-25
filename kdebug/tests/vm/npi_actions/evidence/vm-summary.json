@@ -1,0 +1,163 @@
+{
+  "schema": "kdebug.npi-actions.vm-test.v1",
+  "user": "host",
+  "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2",
+  "actions": {
+    "crdb.correlates": {
+      "ok": true,
+      "summary": {
+        "name": "npi_crdb_top.state",
+        "level": "RTL",
+        "count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "crdb.resolve": {
+      "ok": true,
+      "summary": {
+        "name": "npi_crdb_top.state",
+        "level": "RTL",
+        "status": "resolved"
+      },
+      "error_code": ""
+    },
+    "dm.add_net": {
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "name": "debug_bus",
+        "output_dir": "/home/host/kverif_npi_action_test/design/dm-add-net",
+        "status": "written"
+      },
+      "error_code": ""
+    },
+    "dm.clone_module": {
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_alu",
+        "new_name": "npi_fixture_alu_clone",
+        "output_dir": "/home/host/kverif_npi_action_test/design/dm-clone",
+        "status": "written"
+      },
+      "error_code": ""
+    },
+    "fsdb.writer.create_scope": {
+      "ok": true,
+      "summary": {
+        "output": "/home/host/kverif_npi_action_test/hierarchy.fsdb",
+        "scope_count": 3,
+        "up_count": 1,
+        "status": "written"
+      },
+      "error_code": ""
+    },
+    "fsdb.writer.overwrite_guard": {
+      "ok": false,
+      "summary": {},
+      "error_code": "OUTPUT_EXISTS"
+    },
+    "netlist.iterate": {
+      "ok": true,
+      "summary": {
+        "reference": "npi_fixture_top",
+        "object_type": "npiNlNet",
+        "count": 4,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "netlist.resolve": {
+      "ok": true,
+      "summary": {
+        "name": "npi_fixture_top.result",
+        "status": "resolved"
+      },
+      "error_code": ""
+    },
+    "npi.capabilities": {
+      "ok": true,
+      "summary": {
+        "domain_count": 11,
+        "available_domain_count": 11
+      },
+      "error_code": ""
+    },
+    "power.list": {
+      "ok": false,
+      "summary": {},
+      "error_code": "LICENSE_UNAVAILABLE"
+    },
+    "power.resolve": {
+      "ok": false,
+      "summary": {},
+      "error_code": "LICENSE_UNAVAILABLE"
+    },
+    "scope.list": {
+      "ok": true,
+      "summary": {
+        "path": "top",
+        "scope_count": 2,
+        "signal_count": 0
+      },
+      "error_code": ""
+    },
+    "text.line": {
+      "ok": true,
+      "summary": {
+        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 7,
+        "word_count": 12
+      },
+      "error_code": ""
+    },
+    "text.replace_line": {
+      "ok": true,
+      "summary": {
+        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 7,
+        "output": "/home/host/kverif_npi_action_test/design/design.patched.sv",
+        "status": "written"
+      },
+      "error_code": ""
+    },
+    "text.words": {
+      "ok": true,
+      "summary": {
+        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 7,
+        "count": 12,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "transaction.writer.create": {
+      "ok": true,
+      "summary": {
+        "output": "/home/host/kverif_npi_action_test/transactions.fsdb",
+        "stream": "bus.requests",
+        "transaction_count": 2,
+        "relation_count": 1,
+        "status": "written"
+      },
+      "error_code": ""
+    },
+    "vcs.summary": {
+      "ok": true,
+      "summary": {
+        "database": "/home/host/kverif_npi_action_test/design/simv.daidir",
+        "warnings": 1,
+        "errors": 0,
+        "modules": 2
+      },
+      "error_code": ""
+    }
+  },
+  "passed": true,
+  "license_blocked_actions": [
+    "power.list",
+    "power.resolve"
+  ],
+  "unexpected_failures": [],
+  "overwrite_guard_code": "OUTPUT_EXISTS"
+}
