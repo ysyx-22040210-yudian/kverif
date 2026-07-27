@@ -1,8 +1,14 @@
 #include "core/process/process_runner.h"
 
 #include <cassert>
+#include <cerrno>
 #include <chrono>
+#include <cstdio>
+#include <fstream>
 #include <string>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 int main() {
     kdebug::ProcessRunner runner;
@@ -56,6 +62,68 @@ int main() {
         kdebug::ProcessResult result = runner.run(request);
         assert(result.exit_code == 127);
         assert(result.stderr_text.find("failed to exec") != std::string::npos);
+    }
+
+    {
+        const std::string marker =
+            "/tmp/kdebug-process-runner-descendant-" + std::to_string(getpid());
+        std::remove(marker.c_str());
+        kdebug::ProcessRequest request;
+        request.executable = "/bin/sh";
+        request.argv = {
+            "-c",
+            "(trap '' TERM; sleep 1; printf leaked > '" + marker +
+                "') & trap 'exit 0' TERM; wait"
+        };
+        request.timeout_ms = 100;
+        kdebug::ProcessResult result = runner.run(request);
+        assert(result.timed_out);
+        usleep(1200000);
+        assert(access(marker.c_str(), F_OK) != 0);
+        std::remove(marker.c_str());
+    }
+
+    {
+        const std::string pid_path =
+            "/tmp/kdebug-process-runner-pdeath-" + std::to_string(getpid());
+        std::remove(pid_path.c_str());
+        const pid_t middle = fork();
+        assert(middle >= 0);
+        if (middle == 0) {
+            kdebug::ProcessRequest request;
+            request.executable = "/bin/sh";
+            request.argv = {
+                "-c",
+                "echo $$ > '" + pid_path +
+                    "'; trap 'exit 0' TERM; while :; do :; done"
+            };
+            request.timeout_ms = 5000;
+            runner.run(request);
+            _exit(0);
+        }
+
+        pid_t child = -1;
+        for (int i = 0; i < 200 && child <= 0; ++i) {
+            std::ifstream stream(pid_path.c_str());
+            if (stream.good()) stream >> child;
+            if (child <= 0) usleep(10000);
+        }
+        assert(child > 1);
+        kill(middle, SIGKILL);
+        int middle_status = 0;
+        while (waitpid(middle, &middle_status, 0) < 0 && errno == EINTR) {}
+
+        bool child_gone = false;
+        for (int i = 0; i < 200; ++i) {
+            if (kill(child, 0) != 0 && errno == ESRCH) {
+                child_gone = true;
+                break;
+            }
+            usleep(10000);
+        }
+        if (!child_gone) kill(-child, SIGKILL);
+        std::remove(pid_path.c_str());
+        assert(child_gone);
     }
 
     return 0;

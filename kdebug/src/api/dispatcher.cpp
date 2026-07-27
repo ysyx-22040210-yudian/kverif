@@ -42,12 +42,19 @@ Json engine_error(const Json& request, const std::string& action, const std::str
 int request_timeout_ms(const Json& request) {
     Json limits = request.value("limits", Json::object());
     if (!limits.is_object() || !limits.contains("timeout_ms") ||
-        !limits["timeout_ms"].is_number_integer()) {
+        !(limits["timeout_ms"].is_number_integer() ||
+          limits["timeout_ms"].is_number_unsigned())) {
         return 30000;
     }
-    int timeout_ms = limits["timeout_ms"].get<int>();
+    long long timeout_ms = 0;
+    try {
+        timeout_ms = limits["timeout_ms"].get<long long>();
+    } catch (...) {
+        return 30000;
+    }
     if (timeout_ms < 0) return 0;
-    return timeout_ms;
+    if (timeout_ms > INT_MAX) return INT_MAX;
+    return static_cast<int>(timeout_ms);
 }
 
 bool is_socket_timeout_errno(int err) {
@@ -155,6 +162,9 @@ void stabilize_resource_paths(Json& target) {
     if (has_string(target, "fsdb")) {
         target["fsdb"] = stable_resource_path(target["fsdb"].get<std::string>());
     }
+    if (has_string(target, "elab_db")) {
+        target["elab_db"] = stable_resource_path(target["elab_db"].get<std::string>());
+    }
 }
 
 std::string request_log_session_id(const Json& request, const Json& response = Json()) {
@@ -182,9 +192,10 @@ std::string target_mode_for_log(const Json& request, const Json& response = Json
     Json summary = response.value("summary", Json::object());
     if (has_string(summary, "mode")) return summary["mode"].get<std::string>();
     bool daidir = has_string(target, "daidir");
+    bool elab_db = has_string(target, "elab_db");
     bool fsdb = has_string(target, "fsdb");
     if (daidir && fsdb) return "combined";
-    if (daidir) return "design";
+    if (daidir || elab_db) return "design";
     if (fsdb) return "waveform";
     return "";
 }

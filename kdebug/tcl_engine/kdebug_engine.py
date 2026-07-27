@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import errno
+import io
 import json
 import math
 import os
@@ -24,6 +25,26 @@ INTERNAL_API_VERSION = "kdebug.internal.v1"
 PUBLIC_API_VERSION = "kdebug.v1"
 TOOL_VERSION = "0.1.0-tcl"
 FILE_RPC_VERSION = "kdebug-file-rpc-v1"
+RSCHECK_MAX_TIMEOUT_MS = 2147482647
+VERDI_TERM_WAIT_SECONDS = 0.1
+VERDI_KILL_WAIT_SECONDS = 0.1
+VERDI_KILL_SIGNAL = getattr(signal, "SIGKILL", 9)
+
+try:
+    STRING_TYPES = (basestring,)
+except NameError:
+    STRING_TYPES = (str,)
+
+try:
+    INTEGER_TYPES = (int, long)
+except NameError:
+    INTEGER_TYPES = (int,)
+
+
+class EngineTermination(Exception):
+    def __init__(self, signum):
+        Exception.__init__(self, "engine received signal %s" % signum)
+        self.signum = signum
 
 
 def home_dir():
@@ -31,6 +52,9 @@ def home_dir():
 
 
 def kdebug_home():
+    configured = os.environ.get("KDEBUG_HOME")
+    if configured:
+        return os.path.abspath(configured)
     return os.path.join(home_dir(), ".kdebug")
 
 
@@ -113,7 +137,7 @@ def atomic_write_json(path, payload):
 
 def read_json_file(path, default=None):
     try:
-        with open(path, "r") as fp:
+        with io.open(path, "r", encoding="utf-8") as fp:
             return json.load(fp)
     except Exception:
         return default
@@ -285,10 +309,11 @@ class Registry(object):
 
 def target_mode(target):
     daidir = target.get("daidir") or target.get("dbdir")
+    elab_db = target.get("elab_db")
     fsdb = target.get("fsdb")
     if daidir and fsdb:
         return "combined"
-    if daidir:
+    if daidir or elab_db:
         return "design"
     if fsdb:
         return "waveform"
@@ -427,15 +452,115 @@ def find_verdi():
 
 def parse_timeout_ms(request, default_ms):
     limits = request.get("limits") if isinstance(request.get("limits"), dict) else {}
+    value = limits.get("timeout_ms", 0)
+    if isinstance(value, bool) or not isinstance(value, INTEGER_TYPES):
+        return default_ms
+    if value <= 0:
+        return default_ms
+    return max(100, value)
+
+
+def subprocess_timeout_seconds(request, default_ms):
+    return max(0.1, parse_timeout_ms(request, default_ms) / 1000.0)
+
+
+def process_output_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value
+
+
+def timeout_output(exc):
+    return process_output_text(getattr(exc, "output", None)), process_output_text(
+        getattr(exc, "stderr", None)
+    )
+
+
+def signal_process_group(proc, signum):
     try:
-        value = int(limits.get("timeout_ms", 0))
-    except Exception:
-        value = 0
-    return value if value > 0 else default_ms
+        os.killpg(proc.pid, signum)
+    except (OSError, ProcessLookupError):
+        pass
+
+
+def close_process_pipes(proc):
+    for name in ("stdin", "stdout", "stderr"):
+        stream = getattr(proc, name, None)
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+
+def terminate_verdi_process_group(proc, initial_stdout="", initial_stderr=""):
+    stdout = process_output_text(initial_stdout)
+    stderr = process_output_text(initial_stderr)
+    term_complete = False
+
+    try:
+        signal_process_group(proc, signal.SIGTERM)
+        try:
+            term_stdout, term_stderr = proc.communicate(timeout=VERDI_TERM_WAIT_SECONDS)
+            stdout = process_output_text(term_stdout) or stdout
+            stderr = process_output_text(term_stderr) or stderr
+            term_complete = True
+        except subprocess.TimeoutExpired as exc:
+            timed_stdout, timed_stderr = timeout_output(exc)
+            stdout = timed_stdout or stdout
+            stderr = timed_stderr or stderr
+        except (OSError, ValueError, EngineTermination):
+            # The frontend can terminate the engine while it is already
+            # cleaning up an action. Continue to SIGKILL instead of abandoning
+            # Verdi; closed pipes are handled by the bounded wait below.
+            pass
+    finally:
+        # The Verdi group leader may exit on SIGTERM while a descendant ignores
+        # it. Always target the original process group before returning or
+        # propagating another cancellation exception.
+        signal_process_group(proc, VERDI_KILL_SIGNAL)
+
+    if not term_complete:
+        try:
+            kill_stdout, kill_stderr = proc.communicate(timeout=VERDI_KILL_WAIT_SECONDS)
+            stdout = process_output_text(kill_stdout) or stdout
+            stderr = process_output_text(kill_stderr) or stderr
+            return stdout, stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_stdout, timed_stderr = timeout_output(exc)
+            stdout = timed_stdout or stdout
+            stderr = timed_stderr or stderr
+        except (OSError, ValueError, EngineTermination):
+            pass
+
+    close_process_pipes(proc)
+    try:
+        proc.wait(timeout=VERDI_KILL_WAIT_SECONDS)
+    except (AttributeError, OSError, subprocess.TimeoutExpired):
+        pass
+    except EngineTermination:
+        pass
+    return stdout, stderr
 
 
 def classify_verdi_no_response(stdout, stderr, exit_code):
     text = ((stdout or "") + "\n" + (stderr or "")).lower()
+    license_markers = (
+        "could not checkout verdi license",
+        "cannot checkout verdi license",
+        "unable to checkout verdi license",
+        "license checkout failed",
+    )
+    if any(marker in text for marker in license_markers):
+        return {
+            "code": "VERDI_LICENSE_UNAVAILABLE",
+            "message": "Verdi could not check out a license",
+            "exit_code": exit_code,
+            "stdout": (stdout or "")[-4000:],
+            "stderr": (stderr or "")[-4000:],
+        }
     if "not generated with the -kdb option" in text:
         return {
             "code": "KDB_REQUIRED",
@@ -464,16 +589,168 @@ def classify_verdi_no_response(stdout, stderr, exit_code):
 def design_args_for_target(target):
     args = []
     daidir = target.get("daidir") or target.get("dbdir")
+    elab_db = target.get("elab_db")
     fsdb = target.get("fsdb")
-    if daidir:
+    if elab_db:
+        args.extend(["-elab", elab_db])
+    elif daidir:
         args.extend(["-dbdir", daidir])
     if fsdb and daidir:
         args.extend(["-ssf", fsdb])
     return args
 
 
+def rscheck_text_field(value, field_name):
+    if not isinstance(value, STRING_TYPES):
+        return None, "%s must be a string" % field_name
+    text = value.strip()
+    if not text:
+        return None, "%s must not be empty" % field_name
+    if "\n" in text or "\r" in text or "\t" in text:
+        return None, "%s must not contain tabs or newlines" % field_name
+    return text, None
+
+
+def write_utf8_lines(path, lines):
+    with open(path, "wb") as stream:
+        for line in lines:
+            if not isinstance(line, bytes):
+                line = line.encode("utf-8")
+            stream.write(line)
+            stream.write(b"\n")
+
+
+def prepare_rscheck_inventory(request, target, tmpdir, env):
+    elab_db = target.get("elab_db")
+    if not isinstance(elab_db, STRING_TYPES) or not elab_db.strip():
+        return False, {"code": "RESOURCE_REQUIRED",
+                       "message": "rscheck.inventory requires target.elab_db"}
+
+    limits = request.get("limits") if isinstance(request.get("limits"), dict) else {}
+    if "timeout_ms" in limits:
+        timeout_ms = limits["timeout_ms"]
+        if (isinstance(timeout_ms, bool) or
+                not isinstance(timeout_ms, INTEGER_TYPES) or
+                timeout_ms < 100 or timeout_ms > RSCHECK_MAX_TIMEOUT_MS):
+            return False, {"code": "INVALID_REQUEST",
+                           "message": "limits.timeout_ms must be an integer from 100 to %d" %
+                                      RSCHECK_MAX_TIMEOUT_MS}
+
+    args = request.get("args") if isinstance(request.get("args"), dict) else {}
+    positions = args.get("positions")
+    if not isinstance(positions, list) or not positions:
+        return False, {"code": "INVALID_REQUEST",
+                       "message": "args.positions must be a non-empty string array"}
+    position_lines = []
+    for index, value in enumerate(positions):
+        text, error = rscheck_text_field(value, "args.positions[%d]" % index)
+        if error:
+            return False, {"code": "INVALID_REQUEST", "message": error}
+        position_lines.append(text)
+
+    trace_rules = args.get("trace_rules")
+    if not isinstance(trace_rules, dict):
+        return False, {"code": "INVALID_REQUEST",
+                       "message": "args.trace_rules must be an object mapping module to clock port"}
+    trace_lines = []
+    for module_name in sorted(trace_rules):
+        module, error = rscheck_text_field(module_name, "args.trace_rules module")
+        if error:
+            return False, {"code": "INVALID_REQUEST", "message": error}
+        clock_port, error = rscheck_text_field(
+            trace_rules[module_name], "args.trace_rules[%s]" % module_name)
+        if error:
+            return False, {"code": "INVALID_REQUEST", "message": error}
+        trace_lines.append("%s\t%s" % (module, clock_port))
+
+    trace_max_depth = args.get("trace_max_depth", 16)
+    if isinstance(trace_max_depth, bool) or not isinstance(trace_max_depth, INTEGER_TYPES):
+        return False, {"code": "INVALID_REQUEST",
+                       "message": "args.trace_max_depth must be an integer from 1 to 256"}
+    if trace_max_depth < 1 or trace_max_depth > 256:
+        return False, {"code": "INVALID_REQUEST",
+                       "message": "args.trace_max_depth must be an integer from 1 to 256"}
+
+    clk_port, error = rscheck_text_field(args.get("clk_port", "clk"), "args.clk_port")
+    if error:
+        return False, {"code": "INVALID_REQUEST", "message": error}
+    rst_port, error = rscheck_text_field(args.get("rst_port", "rst_n"), "args.rst_port")
+    if error:
+        return False, {"code": "INVALID_REQUEST", "message": error}
+
+    positions_path = os.path.join(tmpdir, "positions.txt")
+    trace_rules_path = os.path.join(tmpdir, "trace_rules.tsv")
+    inventory_path = os.path.join(tmpdir, "inventory.json")
+    write_utf8_lines(positions_path, position_lines)
+    write_utf8_lines(trace_rules_path, trace_lines)
+    env["KDEBUG_RSCHECK_POSITIONS_FILE"] = positions_path
+    env["KDEBUG_RSCHECK_TRACE_RULES_FILE"] = trace_rules_path
+    env["KDEBUG_RSCHECK_OUTPUT_JSON"] = inventory_path
+    env["KDEBUG_RSCHECK_TRACE_MAX_DEPTH"] = str(trace_max_depth)
+    env["KDEBUG_RSCHECK_CLK_PORT"] = clk_port
+    env["KDEBUG_RSCHECK_RST_PORT"] = rst_port
+    return True, None
+
+
+def rscheck_partial_load(elab_db, stdout, stderr, exit_code):
+    if exit_code != 0:
+        return True
+    if elab_db and os.path.exists(os.path.join(elab_db, ".hasElabcomError")):
+        return True
+    diagnostic = ((stdout or "") + "\n" + (stderr or "")).lower()
+    markers = (
+        "errors occur when loading design",
+        "elaboration error",
+        "npi_load_design failed",
+        "error[npi_load]",
+    )
+    return any(marker in diagnostic for marker in markers)
+
+
+def finalize_rscheck_inventory(data, target, stdout, stderr, exit_code):
+    inventory = data.get("inventory") if isinstance(data, dict) else None
+    if not isinstance(inventory, dict):
+        return False, {"code": "RSCHECK_INVENTORY_INVALID",
+                       "message": "Tcl NPI action did not return data.inventory"}
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    try:
+        top_count = int(summary.get("top_count", 0))
+    except Exception:
+        top_count = 0
+    if top_count < 1:
+        return False, {"code": "NPI_LOAD",
+                       "message": "Verdi elaborated KDB contains no queryable top instances",
+                       "stdout": (stdout or "")[-4000:],
+                       "stderr": (stderr or "")[-4000:]}
+
+    top_names = summary.get("top_names") if isinstance(summary.get("top_names"), list) else []
+    first_top = str(top_names[0]) if top_names else "unknown"
+    notices = inventory.get("notices")
+    if not isinstance(notices, list):
+        notices = []
+    partial = rscheck_partial_load(target.get("elab_db"), stdout, stderr, exit_code)
+    if partial:
+        notices = [item for item in notices
+                   if not (isinstance(item, STRING_TYPES) and
+                           "NPI_LOAD_PARTIAL" in item)]
+        notice = (
+            "NPI_LOAD_PARTIAL: npi_load_design reported elaboration errors, but "
+            "%d top instance(s) remain queryable (first: %s); continuing with "
+            "fail-closed RTL evidence checks" % (top_count, first_top)
+        )
+        notices.append(notice)
+    inventory["notices"] = notices
+    data["inventory"] = inventory
+    data["verdi"] = {
+        "exit_code": exit_code,
+        "partial_load": partial,
+        "stdout_tail": (stdout or "")[-4000:],
+        "stderr_tail": (stderr or "")[-4000:],
+    }
+    return True, data
+
+
 def run_tcl_npi(request, state):
-    action = request.get("action", "")
     target = {}
     target.update(state.get("target", {}))
     if isinstance(request.get("target"), dict):
@@ -484,7 +761,30 @@ def run_tcl_npi(request, state):
     if not verdi:
         return False, {"code": "VERDI_NOT_FOUND", "message": "verdi is not in PATH; set VERDI_HOME"}
 
-    tmpdir = tempfile.mkdtemp(prefix="kdebug-tcl-npi-")
+    previous_handlers = {}
+
+    def terminate_engine(signum, _frame):
+        raise EngineTermination(signum)
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, terminate_engine)
+        tmpdir = tempfile.mkdtemp(prefix="kdebug-tcl-npi-")
+        try:
+            return run_tcl_npi_in_tmpdir(request, state, target, args, verdi, tmpdir)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    except EngineTermination as exc:
+        return False, {"code": "TCL_NPI_TERMINATED",
+                       "message": "Verdi action terminated by signal %s" % exc.signum}
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+
+
+def run_tcl_npi_in_tmpdir(request, state, target, args, verdi, tmpdir):
+    action = request.get("action", "")
     req_path = os.path.join(tmpdir, "request.json")
     rsp_path = os.path.join(tmpdir, "response.json")
     with open(req_path, "w") as fp:
@@ -519,22 +819,39 @@ def run_tcl_npi(request, state):
     limits = request.get("limits") if isinstance(request.get("limits"), dict) else {}
     env["KDEBUG_TCL_MAX_ROWS"] = str(limits.get("max_rows", limits.get("max_results", 200)))
     env["KDEBUG_TCL_MAX_DEPTH"] = str(args.get("max_depth", limits.get("max_depth", 3)))
+    if action == "rscheck.inventory":
+        try:
+            prepared, prepare_error = prepare_rscheck_inventory(request, target, tmpdir, env)
+        except Exception as exc:
+            return False, {"code": "RSCHECK_INPUT_FAILED", "message": str(exc)}
+        if not prepared:
+            return False, prepare_error
     if os.environ.get("VERDI_HOME") and not os.environ.get("NPIL1_PATH"):
         env["NPIL1_PATH"] = os.path.join(os.environ["VERDI_HOME"], "share", "NPI", "L1", "TCL")
 
     cmd = [verdi, "-batch", "-nologo", "-play", tcl_script_path()]
     cmd.extend(design_args_for_target(target))
-    timeout_sec = max(1.0, parse_timeout_ms(request, 120000) / 1000.0)
+    timeout_sec = subprocess_timeout_seconds(request, 120000)
+    proc = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=env, cwd=tmpdir, universal_newlines=True)
+                                env=env, cwd=tmpdir, universal_newlines=True,
+                                start_new_session=True)
         try:
             stdout, stderr = proc.communicate(timeout=timeout_sec)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
+        except EngineTermination:
+            terminate_verdi_process_group(proc)
+            raise
+        except subprocess.TimeoutExpired as exc:
+            initial_stdout, initial_stderr = timeout_output(exc)
+            stdout, stderr = terminate_verdi_process_group(
+                proc, initial_stdout, initial_stderr
+            )
             return False, {"code": "TCL_NPI_TIMEOUT", "message": "Verdi Tcl action timed out",
                            "stdout": stdout[-4000:], "stderr": stderr[-4000:]}
+        except BaseException:
+            terminate_verdi_process_group(proc)
+            raise
     except OSError as exc:
         return False, {"code": "VERDI_EXEC_FAILED", "message": str(exc)}
 
@@ -548,6 +865,8 @@ def run_tcl_npi(request, state):
                        "stdout": stdout[-2000:],
                        "stderr": stderr[-2000:]}
     data = payload.get("data") or {}
+    if action == "rscheck.inventory":
+        return finalize_rscheck_inventory(data, target, stdout, stderr, proc.returncode)
     data.setdefault("verdi", {"exit_code": proc.returncode})
     return True, data
 
@@ -2003,7 +2322,7 @@ def run_action(request, state):
         return active_driver_chain_action(request, state)
     if action in ("trace.driver", "trace.load", "trace.query", "signal.resolve",
                   "signal.canonicalize", "signal.info", "signal.scan",
-                  "value.at", "value.batch_at", "scope.list"):
+                  "value.at", "value.batch_at", "scope.list", "rscheck.inventory"):
         ok, data = run_tcl_npi(request, state)
         if not ok:
             return False, data

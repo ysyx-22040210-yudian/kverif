@@ -130,7 +130,7 @@ void print_shortcut_help() {
         << "  kdebug value-batch --fsdb <waves.fsdb>|--session <id> --signal <sig> [--signal <sig> ...] --time <time>\n"
         << "  kdebug trace-driver --daidir <simv.daidir>|--session <id> --signal <sig> [--include-source]\n"
         << "  kdebug active-driver --session <id>|--daidir <simv.daidir> --fsdb <waves.fsdb> --signal <sig> --time <time>\n"
-        << "  kdebug action <action> [--session id] [--daidir path] [--fsdb path] [--arg key=value] [--target key=value]\n"
+        << "  kdebug action <action> [--session id] [--daidir path] [--elab-db path] [--fsdb path] [--arg key=value] [--target key=value]\n"
         << "\n"
         << "JSON request files and stdin remain supported: kdebug --json request.json or kdebug --json -\n";
 }
@@ -240,6 +240,9 @@ ShortcutParseResult parse_shortcut(int argc, char** argv, OutputFormat& format) 
         } else if (arg == "--daidir") {
             if (!take_value(argc, argv, i, value, result.error)) return result;
             target["daidir"] = value;
+        } else if (arg == "--elab-db") {
+            if (!take_value(argc, argv, i, value, result.error)) return result;
+            target["elab_db"] = value;
         } else if (arg == "--fsdb") {
             if (!take_value(argc, argv, i, value, result.error)) return result;
             target["fsdb"] = value;

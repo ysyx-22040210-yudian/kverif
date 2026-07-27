@@ -11,6 +11,7 @@ BUILD    = build
 LIBEXEC  = libexec
 EXE      = kdebug
 PYTHON  ?= python3
+TCLSH   ?= tclsh
 AXI_REFERENCE_ROOT ?= /home/yian/axi_test/test
 SVT_VIP_INCDIR ?= /home/yian/axi_test/test/include/sverilog
 SVT_VIP_SRCDIR ?= /home/yian/axi_test/test/src/sverilog/vcs
@@ -72,12 +73,13 @@ audit-tcl-npi-only:
 	fi
 
 # Tcl NPI backend: keep the public C++ CLI, but run Verdi/NPI through Tcl.
-$(LIBEXEC)/kdebug-engine: tcl_engine/kdebug-engine tcl_engine/kdebug_engine.py tcl_engine/kdebug_npi.tcl
+$(LIBEXEC)/kdebug-engine: tcl_engine/kdebug-engine tcl_engine/kdebug_engine.py tcl_engine/kdebug_npi.tcl tcl_engine/rscheck_inventory.tcl
 	mkdir -p $(dir $@)
 	mkdir -p $(LIBEXEC)/tcl_engine
 	cp tcl_engine/kdebug-engine $@
 	cp tcl_engine/kdebug_engine.py $(LIBEXEC)/tcl_engine/kdebug_engine.py
 	cp tcl_engine/kdebug_npi.tcl $(LIBEXEC)/tcl_engine/kdebug_npi.tcl
+	cp tcl_engine/rscheck_inventory.tcl $(LIBEXEC)/tcl_engine/rscheck_inventory.tcl
 	chmod +x $@ $(LIBEXEC)/tcl_engine/kdebug_engine.py
 
 $(EXE): $(CORE_OBJS) $(APP_OBJS)
@@ -97,7 +99,7 @@ unit-test: $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o $(BUILD)
 	$(BUILD)/tests/test_file_exchange
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_process_runner tests/unit/test_process_runner.cpp $(CORE_OBJS)
 	$(BUILD)/tests/test_process_runner
-	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_session_catalog tests/unit/test_session_catalog.cpp $(BUILD)/src/session/session_catalog.o
+	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_session_catalog tests/unit/test_session_catalog.cpp $(BUILD)/src/session/session_catalog.o $(CORE_OBJS)
 	$(BUILD)/tests/test_session_catalog
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_action_registry tests/unit/test_action_registry.cpp $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o
 	$(BUILD)/tests/test_action_registry
@@ -121,7 +123,8 @@ log-test: $(CORE_OBJS) $(EXE) internal-engines
 		$(PYTHON) -m pytest -q $(CURDIR)/../kverif_mcp/tests/test_stdio_loop_session_lifecycle.py
 
 test-infra:
-	$(PYTHON) -m pytest -c tests/pytest.ini -q tests/unit/test_test_infra.py
+	$(PYTHON) -m pytest -c tests/pytest.ini -q tests/unit/test_test_infra.py tests/unit/test_rscheck_inventory_engine.py
+	$(TCLSH) tests/unit/test_rscheck_inventory_tcl.tcl
 
 pytest-contract: $(EXE)
 	$(PYTHON) -m pytest -c tests/pytest.ini -q tests/contract

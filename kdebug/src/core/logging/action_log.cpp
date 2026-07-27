@@ -82,8 +82,7 @@ std::string event_id() {
 }
 
 std::string kdebug_home() {
-    const char* home = std::getenv("HOME");
-    return std::string(home ? home : "/tmp") + "/.kdebug";
+    return kdebug_home_dir();
 }
 
 long long env_long(const char* name, long long fallback) {
@@ -249,7 +248,7 @@ bool heavy_key(const std::string& key) {
 }
 
 bool path_key(const std::string& key) {
-    return key == "fsdb" || key == "daidir" || key == "dbdir" ||
+    return key == "fsdb" || key == "daidir" || key == "dbdir" || key == "elab_db" ||
            key == "file_dir" || key == "socket_path" ||
            key == "path" || key == "log_path" ||
            key.find("_path") != std::string::npos ||
@@ -467,7 +466,7 @@ Json request_summary_for_log(const Json& request) {
     out["action"] = action;
     if (target.is_object()) {
         Json t;
-        for (const char* k : {"session_id", "name", "mode", "daidir", "dbdir", "fsdb", "transport", "host", "bind_host", "port"}) {
+        for (const char* k : {"session_id", "name", "mode", "daidir", "dbdir", "elab_db", "fsdb", "transport", "host", "bind_host", "port"}) {
             if (target.contains(k)) t[k] = target[k];
         }
         out["target"] = sanitize_for_log(t);

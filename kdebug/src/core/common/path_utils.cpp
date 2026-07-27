@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <iomanip>
+#include <limits.h>
 #include <sstream>
 #include <unistd.h>
 
@@ -44,7 +45,23 @@ std::string home_dir() {
     return home ? std::string(home) : std::string("/tmp");
 }
 
+std::string kdebug_home_dir() {
+    const char* configured = std::getenv("KDEBUG_HOME");
+    if (configured && configured[0] != '\0') {
+        if (configured[0] == '/') return std::string(configured);
+        char cwd[PATH_MAX] = {};
+        if (getcwd(cwd, sizeof(cwd))) return std::string(cwd) + "/" + configured;
+        return std::string(configured);
+    }
+    return home_dir() + "/.kdebug";
+}
+
 std::string tool_home_dir(const ToolConfig& config) {
+    const std::string legacy_root = ".kdebug";
+    if (config.home_dir_name == legacy_root) return kdebug_home_dir();
+    if (config.home_dir_name.compare(0, legacy_root.size() + 1, legacy_root + "/") == 0) {
+        return kdebug_home_dir() + config.home_dir_name.substr(legacy_root.size());
+    }
     return home_dir() + "/" + config.home_dir_name;
 }
 

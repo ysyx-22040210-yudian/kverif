@@ -12,8 +12,9 @@ int main() {
     const ActionSpec* value_spec = registry.find_spec("value.at");
     const ActionSpec* trace_spec = registry.find_spec("trace.driver");
     const ActionSpec* active_spec = registry.find_spec("trace.active_driver");
+    const ActionSpec* inventory_spec = registry.find_spec("rscheck.inventory");
     const ActionSpec* actions_spec = registry.find_spec("actions");
-    assert(value_spec && trace_spec && active_spec && actions_spec);
+    assert(value_spec && trace_spec && active_spec && inventory_spec && actions_spec);
 
     Json value_json = {
         {"api_version", "kdebug.v1"},
@@ -66,6 +67,27 @@ int main() {
     design.target = {{"daidir", "simv.daidir"}};
     resource = resolver.resolve(design, *trace_spec);
     assert(resource.ok && resource.context.design);
+
+    RequestEnvelope inventory = value;
+    inventory.action = "rscheck.inventory";
+    inventory.target = {{"elab_db", "TB.elab++"}};
+    inventory.args = {
+        {"positions", Json::array({"top.u_tile"})},
+        {"trace_rules", {{"rs_pipe", "clk"}}}
+    };
+    validation = validator.validate(inventory, *inventory_spec);
+    assert(validation.ok);
+    resource = resolver.resolve(inventory, *inventory_spec);
+    assert(resource.ok && resource.context.design);
+
+    inventory.args.erase("positions");
+    validation = validator.validate(inventory, *inventory_spec);
+    assert(!validation.ok && validation.code == "MISSING_FIELD");
+
+    inventory.args["positions"] = Json::array({"top.u_tile"});
+    inventory.target = Json::object();
+    resource = resolver.resolve(inventory, *inventory_spec);
+    assert(!resource.ok && resource.code == "RESOURCE_REQUIRED");
 
     RequestEnvelope combined = value;
     combined.action = "trace.active_driver";

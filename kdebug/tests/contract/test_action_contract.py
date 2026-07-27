@@ -154,6 +154,82 @@ def test_all_examples_validate_against_action_schemas(kdebug_root: Path) -> None
 
 
 @pytest.mark.contract
+def test_rscheck_inventory_response_schema_separates_success_and_error_data(
+    kdebug_root: Path,
+) -> None:
+    schema = _load_json(
+        kdebug_root
+        / "schemas"
+        / "v1"
+        / "actions"
+        / "rscheck.inventory.response.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    success = _load_json(
+        kdebug_root / "examples" / "responses" / "rscheck.inventory.basic.json"
+    )
+    error = {
+        "api_version": "kdebug.v1",
+        "ok": False,
+        "action": "rscheck.inventory",
+        "summary": {},
+        "data": None,
+        "error": {"code": "NPI_LOAD", "message": "no queryable top"},
+    }
+
+    validator.validate(success)
+    validator.validate(error)
+
+    invalid_success = dict(success)
+    invalid_success["data"] = None
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(invalid_success)
+
+    invalid_error = dict(error)
+    invalid_error["data"] = {}
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(invalid_error)
+
+
+@pytest.mark.contract
+def test_rscheck_inventory_contract_is_registered_and_requires_elab_db(
+    cli_runner: CliRunner, kdebug_root: Path,
+) -> None:
+    request = {
+        "api_version": "kdebug.v1",
+        "action": "rscheck.inventory",
+        "args": {"positions": ["top.u_tile"], "trace_rules": {"rs_pipe": "clk"}},
+        "output": {"format": "json"},
+    }
+    result = cli_runner.run(request, output_format="json")
+    assert result.returncode == 1
+    assert result.response["error"]["code"] == "RESOURCE_REQUIRED"
+    assert "elab_db" in result.response["error"]["message"]
+    response_schema = _load_json(
+        kdebug_root
+        / "schemas"
+        / "v1"
+        / "actions"
+        / "rscheck.inventory.response.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(response_schema)
+    validator.validate(result.response)
+
+    mixed_response = dict(result.response)
+    mixed_response["data"] = {}
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(mixed_response)
+
+    request["target"] = {"elab_db": "TB.elab++"}
+    del request["args"]["positions"]
+    result = cli_runner.run(request, output_format="json")
+    assert result.returncode == 1
+    assert result.response["error"]["code"] == "MISSING_FIELD"
+    assert "positions" in result.response["error"]["message"]
+    validator.validate(result.response)
+
+
+@pytest.mark.contract
 @pytest.mark.parametrize("action", ["actions", "schema", "batch"])
 def test_safe_request_examples_execute_with_real_binary(
     cli_runner: CliRunner, kdebug_root: Path, action: str

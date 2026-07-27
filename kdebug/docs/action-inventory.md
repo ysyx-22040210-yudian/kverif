@@ -15,7 +15,7 @@ example 和 contract test 迁移使用。状态定义：
 | resource | 含义 |
 | --- | --- |
 | `none` | 不需要 `target` 资源 |
-| `design` | 需要 `target.daidir` 或包含 design 的 `session_id` |
+| `design` | 需要 `target.daidir`、`target.elab_db`，或包含 design 的 `session_id` |
 | `waveform` | 需要 `target.fsdb` 或包含 waveform 的 `session_id` |
 | `combined` | 需要 `target.daidir` + `target.fsdb`，或包含两者的 session |
 | `session` | 主要操作 top-level session registry |
@@ -60,6 +60,7 @@ example 和 contract test 迁移使用。状态定义：
 | `port.trace` | design | stable | design | design engine forward | partial |
 | `instance.map` | design | stable | design | design engine forward | partial |
 | `interface.resolve` | design | stable | design | design engine forward | partial |
+| `rscheck.inventory` | design | stable | design | Verdi elaborated KDB Tcl NPI inventory | targeted |
 
 ## Waveform Actions
 

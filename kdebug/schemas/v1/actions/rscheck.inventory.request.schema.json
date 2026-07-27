@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kdebug.rscheck.inventory.request.v1",
+  "title": "rscheck.inventory request",
+  "type": "object",
+  "required": ["api_version", "action", "target", "args"],
+  "properties": {
+    "api_version": {"type": "string", "enum": ["kdebug.v1"]},
+    "request_id": {"type": "string"},
+    "action": {"type": "string", "enum": ["rscheck.inventory"]},
+    "target": {
+      "type": "object",
+      "required": ["elab_db"],
+      "properties": {
+        "elab_db": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "args": {
+      "type": "object",
+      "required": ["positions", "trace_rules"],
+      "properties": {
+        "positions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "trace_rules": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "trace_max_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "clk_port": {"type": "string", "minLength": 1},
+        "rst_port": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 2147482647}
+      },
+      "additionalProperties": true
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "format": {"type": "string", "enum": ["json", "kout"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

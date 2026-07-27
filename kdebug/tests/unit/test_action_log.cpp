@@ -49,6 +49,9 @@ int main() {
     assert(home_dir != nullptr);
     std::string home = home_dir;
     setenv("HOME", home.c_str(), 1);
+    const std::string kdebug_root = home + "/isolated-kdebug-root";
+    setenv("KDEBUG_HOME", kdebug_root.c_str(), 1);
+    assert(kdebug_core::public_session_dir("case_a").find(kdebug_root + "/sessions/") == 0);
 
     Json request = {
         {"api_version", "kdebug.v1"},

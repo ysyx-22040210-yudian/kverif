@@ -78,6 +78,13 @@ void register_design(ActionRegistry& r) {
         }
         register_spec(r, spec);
     }
+
+    ActionSpec inventory = stable_spec("rscheck.inventory", "design",
+                                       ResourceRequirement::Design,
+                                       "engine_forward");
+    inventory.args.required.push_back("positions");
+    inventory.args.required.push_back("trace_rules");
+    register_spec(r, inventory);
 }
 
 void register_waveform(ActionRegistry& r) {

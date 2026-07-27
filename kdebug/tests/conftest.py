@@ -61,6 +61,15 @@ def isolated_home(tmp_path: Path) -> Path:
     return home
 
 
+@pytest.fixture(autouse=True)
+def isolate_kdebug_home(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    root = isolated_home / ".kdebug"
+    monkeypatch.setenv("KDEBUG_HOME", str(root))
+    return root
+
+
 @pytest.fixture
 def cli_runner(
     kdebug_bin: Path,
@@ -70,7 +79,11 @@ def cli_runner(
     return CliRunner(
         kdebug_bin,
         cwd=repo_root,
-        base_env={"HOME": str(isolated_home), "KVERIF_HOME": str(repo_root)},
+        base_env={
+            "HOME": str(isolated_home),
+            "KDEBUG_HOME": str(isolated_home / ".kdebug"),
+            "KVERIF_HOME": str(repo_root),
+        },
     )
 
 
@@ -78,7 +91,11 @@ def cli_runner(
 def command_runner(repo_root: Path, isolated_home: Path) -> CommandRunner:
     return CommandRunner(
         cwd=repo_root,
-        base_env={"HOME": str(isolated_home), "KVERIF_HOME": str(repo_root)},
+        base_env={
+            "HOME": str(isolated_home),
+            "KDEBUG_HOME": str(isolated_home / ".kdebug"),
+            "KVERIF_HOME": str(repo_root),
+        },
     )
 
 

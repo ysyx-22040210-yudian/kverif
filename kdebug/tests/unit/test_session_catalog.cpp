@@ -13,7 +13,8 @@ int main() {
     assert(home != nullptr);
     assert(setenv("HOME", home, 1) == 0);
 
-    const std::string kdebug_home = std::string(home) + "/.kdebug";
+    const std::string kdebug_home = std::string(home) + "/isolated-kdebug-root";
+    assert(setenv("KDEBUG_HOME", kdebug_home.c_str(), 1) == 0);
     const std::string engine_home = kdebug_home + "/engine";
     assert(mkdir(kdebug_home.c_str(), 0700) == 0);
     assert(mkdir(engine_home.c_str(), 0700) == 0);

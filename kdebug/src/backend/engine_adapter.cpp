@@ -1,9 +1,12 @@
 #include "backend/engine_adapter.h"
 #include "api/response.h"
+#include "common/path_utils.h"
 #include "core/process/process_runner.h"
 #include "logging/action_log.h"
 #include "runtime/work_dir.h"
 
+#include <cstdlib>
+#include <limits>
 #include <string>
 
 namespace kdebug {
@@ -27,6 +30,39 @@ std::string request_session_id_for_log(const Json& request) {
     return sid.empty() ? "adhoc" : sid;
 }
 
+constexpr long long engine_cleanup_grace_ms(long long requested) {
+    return requested / 40 < 25 ? 25 : (requested / 40 > 250 ? 250 : requested / 40);
+}
+
+static_assert(engine_cleanup_grace_ms(100) == 25, "minimum timeout cleanup grace");
+static_assert(engine_cleanup_grace_ms(26000) == 250, "bounded timeout cleanup grace");
+
+int engine_process_timeout_ms(const Json& request) {
+    const Json limits = request.value("limits", Json::object());
+    if (!limits.is_object()) return 0;
+    const auto timeout = limits.find("timeout_ms");
+    if (timeout == limits.end() ||
+        !(timeout->is_number_integer() || timeout->is_number_unsigned())) {
+        return 0;
+    }
+    long long requested = 0;
+    try {
+        requested = timeout->get<long long>();
+    } catch (...) {
+        return 0;
+    }
+    if (requested <= 0) return 0;
+    if (requested < 100) requested = 100;
+
+    // Leave a bounded window for the engine to terminate Verdi and serialize
+    // its timeout response. Keep it below the reserve expected from an outer
+    // adapter so the two process-tree deadlines cannot coincide.
+    const long long cleanup_grace = engine_cleanup_grace_ms(requested);
+    const long long with_cleanup_grace = requested + cleanup_grace;
+    const long long maximum = std::numeric_limits<int>::max();
+    return static_cast<int>(with_cleanup_grace > maximum ? maximum : with_cleanup_grace);
+}
+
 } // namespace
 
 EngineAdapter::EngineAdapter(const std::string& executable_dir)
@@ -45,6 +81,13 @@ bool EngineAdapter::invoke(const Json& kdebug_request,
                            std::string& error) const {
     const std::string component = "engine";
     const std::string log_sid = request_session_id_for_log(kdebug_request);
+    const std::string normalized_home = kdebug_core::kdebug_home_dir();
+    if (setenv("KDEBUG_HOME", normalized_home.c_str(), 1) != 0) {
+        error = "failed to propagate normalized KDEBUG_HOME to the internal engine";
+        kdebug_core::log_lifecycle_event(component, log_sid, "engine.environment_failed", false,
+                                         {{"kdebug_home", normalized_home}});
+        return false;
+    }
     const std::string path = engine_path();
     const std::string workdir = engine_workdir();
 
@@ -65,8 +108,7 @@ bool EngineAdapter::invoke(const Json& kdebug_request,
     process_req.argv = {"ai", "query", "-"};
     process_req.stdin_text = stdin_text;
     process_req.working_dir = workdir;
-    process_req.timeout_ms = kdebug_request.value("limits", Json::object())
-                                 .value("timeout_ms", 0);
+    process_req.timeout_ms = engine_process_timeout_ms(kdebug_request);
 
     kdebug_core::log_lifecycle_event(component, log_sid, "engine.spawning", true,
                                      {{"engine_path", path}, {"workdir", workdir},

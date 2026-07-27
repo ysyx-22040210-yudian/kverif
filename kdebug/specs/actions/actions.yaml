@@ -805,6 +805,29 @@
       ]
     },
     {
+      "name": "rscheck.inventory",
+      "category": "design",
+      "status": "stable",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/rscheck.inventory.request.schema.json",
+        "response": "schemas/v1/actions/rscheck.inventory.response.schema.json"
+      },
+      "examples": {
+        "request": [
+          "examples/requests/rscheck.inventory.basic.json"
+        ],
+        "response": [
+          "examples/responses/rscheck.inventory.basic.json"
+        ]
+      },
+      "required_args": [
+        "positions",
+        "trace_rules"
+      ]
+    },
+    {
       "name": "list.add",
       "category": "waveform",
       "status": "stable",

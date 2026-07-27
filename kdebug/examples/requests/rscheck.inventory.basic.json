@@ -1,0 +1,21 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "rscheck.inventory",
+  "target": {
+    "elab_db": "TB.elab++"
+  },
+  "args": {
+    "positions": [
+      "top.u_tile"
+    ],
+    "trace_rules": {
+      "rs_pipe": "clk"
+    },
+    "trace_max_depth": 16,
+    "clk_port": "clk",
+    "rst_port": "rst_n"
+  },
+  "output": {
+    "format": "json"
+  }
+}

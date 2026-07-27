@@ -115,6 +115,24 @@ kdebug trace-driver --daidir simv.daidir --signal top.u.ready --include-source
 
 推荐使用 `tools/kdebug` 或 `PATH` 中的 `kdebug`。
 
+运行状态默认写入 `~/.kdebug`。需要让压测、并行任务或不同工程完全隔离时，设置
+绝对路径 `KDEBUG_HOME`；该目录会统一承载 frontend/engine 的 work、结构化日志、
+session 文件和 registry。例如：
+
+```bash
+export KDEBUG_HOME="$(mktemp -d /tmp/kdebug-state.XXXXXX)"
+```
+
+未设置或设置为空时仍使用 `~/.kdebug`，保持既有行为。
+
+作为子进程嵌入其他工具时，`limits.timeout_ms` 是 engine/Verdi 的工作期限，最小
+有效值为 100ms。kdebug frontend 会在其后增加
+`clamp(timeout_ms / 40, 25ms, 250ms)` 的内部清理窗口。外层 adapter 的 hard
+deadline 必须再晚至少 250ms，推荐相对 `limits.timeout_ms` 总共预留不少于
+500ms，避免 frontend 与 adapter 同时终止同一进程树。
+Linux frontend 启动的 internal engine 还设置 parent-death SIGTERM；若外层取消或
+hard timeout 先结束 frontend，engine 会回收 Verdi 子进程并清理 action 临时目录。
+
 ### Cluster file transport
 
 当本机或登录机无法直接连接计算节点 TCP 端口时，不要尝试把 kdebug daemon 暴露给本机直连；使用原生 `transport:"file"`，让 kdebug daemon 通过共享文件系统交换 request/response。默认交换目录在 backend session 目录下：
@@ -837,6 +855,8 @@ compact payload 优先返回 evidence，而不是大段源码：
 ## 日志与排障
 
 kdebug 默认静默记录结构化日志。日志只写文件，不打印到 stdout/stderr，不改变 JSON API 响应；日志写入失败也不会影响 action 执行。
+
+下列 `~/.kdebug` 均表示 kdebug state root；设置 `KDEBUG_HOME` 后替换为该绝对路径。
 
 主要位置：
 

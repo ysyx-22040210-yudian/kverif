@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -47,6 +48,7 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
         return result;
     }
 
+    const pid_t parent_pid = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         result.exit_code = -1;
@@ -56,6 +58,9 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
 
     if (pid == 0) {
         // Child process
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM) != 0 || getppid() != parent_pid) {
+            _exit(125);
+        }
         setpgid(0, 0);
         dup2(stdin_pipe.read_end.get(), STDIN_FILENO);
         dup2(stdout_pipe.write_end.get(), STDOUT_FILENO);
@@ -106,6 +111,7 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
     bool child_exited = false;
     int status = 0;
     bool sent_sigterm = false;
+    bool sent_sigkill = false;
     auto termination_time = start;
 
     while (!child_exited || stdout_pipe.read_end.valid() || stderr_pipe.read_end.valid()) {
@@ -118,7 +124,7 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
         }
 
         const auto now = std::chrono::steady_clock::now();
-        if (!child_exited && request.timeout_ms > 0 &&
+        if ((!child_exited || sent_sigterm) && request.timeout_ms > 0 &&
             std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() >=
                 request.timeout_ms) {
             result.timed_out = true;
@@ -127,9 +133,11 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
                 sent_sigterm = true;
                 termination_time = now;
                 stdin_pipe.write_end.reset();
-            } else if (std::chrono::duration_cast<std::chrono::milliseconds>(
+            } else if (!sent_sigkill &&
+                       std::chrono::duration_cast<std::chrono::milliseconds>(
                            now - termination_time).count() >= 200) {
                 kill(-pid, SIGKILL);
+                sent_sigkill = true;
             }
         }
 
@@ -182,6 +190,11 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
         kill(-pid, SIGKILL);
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
         child_exited = true;
+    }
+    if (result.timed_out && sent_sigterm && !sent_sigkill) {
+        // The group leader may exit on SIGTERM while a descendant survives or
+        // detaches its pipes. Never return a timed-out process tree alive.
+        kill(-pid, SIGKILL);
     }
     drain_fd(stdout_pipe.read_end, result.stdout_text);
     drain_fd(stderr_pipe.read_end, result.stderr_text);

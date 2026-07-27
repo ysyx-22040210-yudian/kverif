@@ -95,7 +95,7 @@ Json catalog_schema_response(const Json& request) {
         {"api_version", kApiVersion},
         {"request", {
             {"required", Json::array({"api_version", "action"})},
-            {"target_resources", Json::array({"daidir", "fsdb", "session_id"})},
+            {"target_resources", Json::array({"daidir", "elab_db", "fsdb", "session_id"})},
             {"modes", Json::array({"design", "waveform", "combined"})}
         }},
         {"combined_action", {

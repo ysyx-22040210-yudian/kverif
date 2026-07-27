@@ -92,6 +92,7 @@ proc write_response_raw {json_text} {
         return
     }
     set fp [open $::env(KDEBUG_TCL_RESPONSE_JSON) w]
+    fconfigure $fp -translation lf -encoding utf-8
     puts $fp $json_text
     close $fp
 }
@@ -618,6 +619,21 @@ proc main {} {
         scope_list_action [env_or_empty KDEBUG_TCL_FSDB] [env_or_empty KDEBUG_TCL_SCOPE] [env_or_empty KDEBUG_TCL_MAX_DEPTH] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "trace.active_driver" || $action eq "trace.active_driver_chain"} {
         active_trace_action [env_or_empty KDEBUG_TCL_SIGNAL] [env_or_empty KDEBUG_TCL_TIME]
+    } elseif {$action eq "rscheck.inventory"} {
+        set collector [file join [file dirname [info script]] rscheck_inventory.tcl]
+        if {![file exists $collector]} {
+            fail_data "RSCHECK_INVENTORY_UNAVAILABLE" "rscheck inventory Tcl backend is missing: $collector"
+            return
+        }
+        if {[catch {source $collector} source_error]} {
+            fail_data "RSCHECK_INVENTORY_UNAVAILABLE" "cannot load rscheck inventory Tcl backend: $source_error"
+            return
+        }
+        if {![llength [info commands rscheck_inventory_action]]} {
+            fail_data "RSCHECK_INVENTORY_UNAVAILABLE" "rscheck_inventory_action is not defined"
+            return
+        }
+        rscheck_inventory_action
     } else {
         fail_data "NOT_IMPLEMENTED" "Tcl NPI backend does not implement action: $action"
     }

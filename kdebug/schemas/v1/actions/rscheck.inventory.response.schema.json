@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kdebug.rscheck.inventory.response.v1",
+  "title": "rscheck.inventory response",
+  "type": "object",
+  "required": ["api_version", "ok", "action", "summary", "data"],
+  "properties": {
+    "api_version": {"type": "string", "enum": ["kdebug.v1"]},
+    "request_id": {"type": "string"},
+    "ok": {"type": "boolean"},
+    "action": {"type": "string", "enum": ["rscheck.inventory"]},
+    "summary": {
+      "type": "object",
+      "properties": {
+        "top_count": {"type": "integer"},
+        "position_count": {"type": "integer"},
+        "instance_count": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "data": {
+      "type": ["object", "null"],
+      "required": ["inventory", "summary", "verdi"],
+      "properties": {
+        "inventory": {"$ref": "#/$defs/inventory"},
+        "summary": {"type": "object", "additionalProperties": true},
+        "verdi": {"type": "object", "additionalProperties": true}
+      },
+      "additionalProperties": true
+    },
+    "findings": {"type": "array"},
+    "warnings": {"type": "array"},
+    "error": {},
+    "meta": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"ok": {"const": true}},
+        "required": ["ok"]
+      },
+      "then": {
+        "properties": {"data": {"type": "object"}}
+      },
+      "else": {
+        "required": ["error"],
+        "properties": {
+          "data": {"type": "null"},
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {"type": "string", "minLength": 1},
+              "message": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "port_connection": {
+      "type": "object",
+      "required": ["connection", "type"],
+      "properties": {
+        "connection": {"type": "string"},
+        "type": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "driver_source": {
+      "type": "object",
+      "required": ["instance", "module"],
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "clock_trace_node": {
+      "type": "object",
+      "required": ["instance", "module", "depth", "path"],
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1},
+        "depth": {"type": "integer", "minimum": 1, "maximum": 256},
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      },
+      "additionalProperties": false
+    },
+    "clock_trace": {
+      "type": "object",
+      "required": ["clock_port", "max_depth", "excluded_inputs", "status", "modules", "diagnostics"],
+      "properties": {
+        "clock_port": {"type": "string", "minLength": 1},
+        "max_depth": {"type": "integer", "minimum": 1, "maximum": 256},
+        "excluded_inputs": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "clk"},
+            {"const": "rst_n"}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "status": {"type": "string", "enum": ["complete", "depth_limited", "unresolved"]},
+        "modules": {"type": "array", "items": {"$ref": "#/$defs/clock_trace_node"}},
+        "diagnostics": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "instance": {
+      "type": "object",
+      "required": ["name", "full_name", "module", "file", "line", "ports", "parameters", "clk_sources", "clock_trace"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "full_name": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1},
+        "file": {"type": "string"},
+        "line": {"type": ["integer", "null"]},
+        "ports": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/port_connection"}
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "clk_sources": {"type": "array", "items": {"$ref": "#/$defs/driver_source"}},
+        "clock_trace": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/clock_trace"}
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "position": {
+      "type": "object",
+      "required": ["found", "instances"],
+      "properties": {
+        "found": {"type": "boolean"},
+        "instances": {"type": "array", "items": {"$ref": "#/$defs/instance"}}
+      },
+      "additionalProperties": false
+    },
+    "inventory": {
+      "type": "object",
+      "required": ["schema_version", "positions", "warnings", "notices"],
+      "properties": {
+        "schema_version": {"const": 3},
+        "positions": {"type": "object", "additionalProperties": {"$ref": "#/$defs/position"}},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "notices": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

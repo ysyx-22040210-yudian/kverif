@@ -37,8 +37,12 @@ Usage
   kdebug session-open --name <id> [--daidir simv.daidir] [--fsdb waves.fsdb]
       Open a reusable debug session. Use session-list/session-close to inspect or close it.
 
-  kdebug action <action> [--session id] [--daidir path] [--fsdb path] [--arg key=value]
+  kdebug action <action> [--session id] [--daidir path] [--elab-db path] [--fsdb path] [--arg key=value]
       Generic parameter-style shortcut for actions that do not yet have a named subcommand.
+
+  kdebug action rscheck.inventory --elab-db <TB.elab++> \
+      --arg 'positions=["top.u_tile"]' --arg 'trace_rules={"rs_pipe":"clk"}' --json
+      Collect a schema-v3 register-stage inventory from a Verdi elaborated KDB.
 
 Request / output contract
 -------------------------
@@ -129,6 +133,9 @@ Target modes
 
 Session transport
 -----------------
+  Runtime state defaults to ~/.kdebug. Set KDEBUG_HOME to an absolute directory
+  to isolate frontend/engine work, logs, session files, and registries.
+
   Default transport is UDS. Keep the default for normal same-host debug.
   Set KDEBUG_TRANSPORT=uds|tcp|file to choose the default transport for newly
   opened sessions; explicit args.transport or target.transport takes priority.
@@ -153,7 +160,7 @@ Session transport
   needed and authorized.
 
   Use file transport when the client cannot connect to a compute-node TCP port
-  but both sides can see the same ~/.kdebug session directory:
+  but both sides can see the same kdebug state root:
 
     {
       "name": "wave_file",
@@ -161,7 +168,7 @@ Session transport
     }
 
   file transport stores a v2 state directory under
-  ~/.kdebug/{design,waveform}/sessions/<session_id>/transport/:
+  <state-root>/{design,waveform}/sessions/<session_id>/transport/:
 
       requests/    client-published pending requests
       claims/      worker-claimed running requests

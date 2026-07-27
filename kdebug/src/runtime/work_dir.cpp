@@ -1,5 +1,7 @@
 #include "runtime/work_dir.h"
 
+#include "common/path_utils.h"
+
 #include <cstdlib>
 #include <limits.h>
 #include <sys/stat.h>
@@ -18,8 +20,7 @@ bool ensure_dir(const std::string& path) {
 } // namespace
 
 std::string runtime_work_dir(const std::string& component) {
-    const char* home = std::getenv("HOME");
-    return std::string(home ? home : "/tmp") + "/.kdebug/work/" + component;
+    return kdebug_core::kdebug_home_dir() + "/work/" + component;
 }
 
 bool ensure_runtime_work_dir(const std::string& path) {

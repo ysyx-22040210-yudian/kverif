@@ -1,5 +1,7 @@
 #include "session/session_catalog.h"
 
+#include "common/path_utils.h"
+
 #include <cstdlib>
 #include <fstream>
 
@@ -8,8 +10,7 @@ namespace kdebug {
 namespace {
 
 std::string canonical_registry_path() {
-    const char* home = std::getenv("HOME");
-    return std::string(home ? home : "/tmp") + "/.kdebug/engine/registry.json";
+    return kdebug_core::kdebug_home_dir() + "/engine/registry.json";
 }
 
 } // namespace

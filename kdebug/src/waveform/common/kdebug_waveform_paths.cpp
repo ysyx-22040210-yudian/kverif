@@ -19,7 +19,7 @@ const kdebug_core::ToolConfig& tool_config() {
 }
 
 std::string kdebug_home_dir() {
-    return kdebug_core::home_dir() + "/.kdebug";
+    return kdebug_core::kdebug_home_dir();
 }
 
 bool ensure_dir(const std::string& path) {

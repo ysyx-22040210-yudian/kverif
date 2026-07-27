@@ -1,0 +1,60 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "rscheck.inventory",
+  "summary": {
+    "top_count": 1,
+    "position_count": 1,
+    "instance_count": 1
+  },
+  "data": {
+    "inventory": {
+      "schema_version": 3,
+      "positions": {
+        "top.u_tile": {
+          "found": true,
+          "instances": [
+            {
+              "name": "AAAA_BBB_C0",
+              "full_name": "top.u_tile.AAAA_BBB_C0",
+              "module": "rs_pipe",
+              "file": "rtl/rs_example.sv",
+              "line": 42,
+              "ports": {
+                "clk": {
+                  "connection": "top.u_tile.clk_rs",
+                  "type": "npiNet"
+                }
+              },
+              "parameters": {
+                "RS_CRG_EN": "0"
+              },
+              "clk_sources": [],
+              "clock_trace": {
+                "clock_port": "clk",
+                "max_depth": 16,
+                "excluded_inputs": ["clk", "rst_n"],
+                "status": "complete",
+                "modules": [],
+                "diagnostics": []
+              }
+            }
+          ]
+        }
+      },
+      "warnings": [],
+      "notices": []
+    },
+    "summary": {
+      "top_count": 1,
+      "top_names": ["top"],
+      "position_count": 1,
+      "instance_count": 1
+    },
+    "verdi": {
+      "exit_code": 0,
+      "partial_load": false
+    }
+  },
+  "warnings": []
+}

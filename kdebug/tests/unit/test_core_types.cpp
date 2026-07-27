@@ -8,6 +8,10 @@
 #include <string>
 
 int main() {
+    const char* original_kdebug_home = std::getenv("KDEBUG_HOME");
+    const std::string saved_kdebug_home = original_kdebug_home ? original_kdebug_home : "";
+    unsetenv("KDEBUG_HOME");
+
     kdebug_core::ToolConfig config = kdebug_core::make_tool_config("kdebug", ".kdebug", "kdebug", "1.0");
     assert(config.tool_name == "kdebug");
     assert(config.home_dir_name == ".kdebug");
@@ -32,6 +36,18 @@ int main() {
 
     assert(std::string(kdebug_core::CMD_PING) == "PING");
     assert(kdebug_core::registry_path(config).find(".kdebug/registry.json") != std::string::npos);
+    assert(setenv("KDEBUG_HOME", "/tmp/kdebug-explicit-root", 1) == 0);
+    assert(kdebug_core::kdebug_home_dir() == "/tmp/kdebug-explicit-root");
+    assert(kdebug_core::tool_home_dir(config) == "/tmp/kdebug-explicit-root");
+    assert(kdebug_core::registry_path(config) == "/tmp/kdebug-explicit-root/registry.json");
+    const kdebug_core::ToolConfig engine_config =
+        kdebug_core::make_tool_config("kdebug-engine", ".kdebug/engine", "kdebug-engine", "1.2");
+    assert(kdebug_core::tool_home_dir(engine_config) == "/tmp/kdebug-explicit-root/engine");
+    assert(setenv("KDEBUG_HOME", "relative-kdebug-root", 1) == 0);
+    assert(!kdebug_core::kdebug_home_dir().empty());
+    assert(kdebug_core::kdebug_home_dir()[0] == '/');
+    assert(kdebug_core::kdebug_home_dir().find("/relative-kdebug-root") != std::string::npos);
+    unsetenv("KDEBUG_HOME");
     assert(kdebug_core::is_valid_session_name("A"));
     assert(kdebug_core::is_valid_session_name("case_1"));
     assert(kdebug_core::is_valid_session_name("Case_0123456789_abc"));
@@ -60,6 +76,8 @@ int main() {
     assert(short_socket.size() < 104);
     if (old_home) setenv("HOME", saved_home.c_str(), 1);
     else unsetenv("HOME");
+    if (original_kdebug_home) setenv("KDEBUG_HOME", saved_kdebug_home.c_str(), 1);
+    else unsetenv("KDEBUG_HOME");
 
     assert(kdebug_core::resource_content_matches(100, 4096, 100, 4096));
     assert(!kdebug_core::resource_identity_differs(10, 20, 10, 20));
