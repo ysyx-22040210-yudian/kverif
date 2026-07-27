@@ -12,6 +12,96 @@ kverif 的验证工程师。二次开发不使用语言 SDK，也不导入 kveri
 - 把 kverif 接入 Makefile、回归脚本、LSF、CI 或公司内部任务系统。
 - 在不破坏 Verdi 2018 兼容性的前提下增加新的 kdebug/kcov action。
 
+## 0. 表格式总览
+
+本手册按“先查表、再复制命令、最后看完整工作流”的方式组织。表格中的命令均以 VM
+普通用户 `host` 的固定安装目录 `/home/host/kverif` 为例；`/data/...` 是待替换的项目数据路径。
+多行命令没有塞进表格单元格，避免复制时混入 `<br>` 或 Markdown 转义字符。
+
+### 0.1 按任务选择工具
+
+| 要解决的问题 | 首选命令 | 必需输入 | 典型输出 | 最小绝对路径命令 | 详细章节 |
+| --- | --- | --- | --- | --- | --- |
+| 查询单个时间点的信号值 | `kdebug value-at` | 原始 FSDB、完整信号名、时间 | 值、位宽、radix、查询时间 | `/home/host/kverif/tools/kdebug --json value-at --fsdb /data/run/waves.fsdb --signal tb_top.dut.ready --time 100ns --format hex` | 10.2 |
+| 同一时间批量采样多个信号 | `kdebug value-batch` | FSDB、可重复 `--signal`、时间 | 每个信号的值和状态 | `/home/host/kverif/tools/kdebug --json value-batch --fsdb /data/run/waves.fsdb --signal tb_top.dut.valid --signal tb_top.dut.ready --time 100ns` | 10.2 |
+| 扫描波形窗口、统计活动度或未知值 | `kdebug action signal.scan` | FSDB、信号、begin/end | 变化行、截断状态、活动度摘要 | `/home/host/kverif/tools/kdebug --json action signal.scan --fsdb /data/run/waves.fsdb --arg signal=tb_top.dut.valid --arg begin=0ns --arg end=1us --limit max_rows=500` | 9.1、10.2 |
+| 查静态 driver、load 或依赖图 | `kdebug trace-driver/trace-graph` | 与当前构建匹配的 `simv.daidir`、完整层次信号名 | edge、源码位置、依赖图 | `/home/host/kverif/tools/kdebug --json trace-graph --daidir /data/build/simv.daidir --signal tb_top.dut.ready --max-depth 8 --include-source --include-trace` | 9.2、10.2 |
+| 联合波形和连线定位当前生效 driver | `kdebug active-driver` | FSDB、daidir、信号、时间 | active edge、控制条件、trace | `/home/host/kverif/tools/kdebug --json active-driver --fsdb /data/run/waves.fsdb --daidir /data/build/simv.daidir --signal tb_top.dut.ready --time 1040ns --include-control --include-trace` | 10.2 |
+| 调用 Verdi 2018 独立 Tcl NPI 能力 | `kdebug action` | action 对应的 daidir/CRDB/UPF/输出参数 | 网表、Text、DM、VCS、Power、CRDB 或 writer 结果 | `/home/host/kverif/tools/kdebug --json action netlist.resolve --daidir /data/build/simv.daidir --arg name=tb_top.dut.ready --arg object_type=npiNlNet` | 10.2.1 |
+| 汇总、筛选或导出 VDB coverage | `kcov` | 真实 VDB 或命名 session | coverage summary、holes、artifact | `/home/host/kverif/tools/kcov --json cov-holes --vdb /data/run/simv.vdb --metrics line,toggle,branch --max-items 100` | 9.3、10.3 |
+| 计算 SystemVerilog 位值、切片或条件 | `kbit` | literal/表达式、可选变量 | 确定位宽、值或布尔结论 | `/home/host/kverif/tools/kbit check --expr "valid && ready" --var "valid=1'b1" --var "ready=1'b1" --json` | 10.4 |
+| 解码多拍 entry 字段 | `kentry` | YAML/JSON 配置、JSONL fragments | 拼接后的 entry 和字段切片 | `/home/host/kverif/tools/kentry decode --config /data/project/entry.yaml --input /data/run/fragments.jsonl --json --pretty` | 10.5 |
+| 把日志位置短 ID 还原到源码 | `kloc` | `L_XXXXXXXX`、sidecar JSONL map | 文件、行号、上下文或热点 | `/home/host/kverif/tools/kloc context L_00000001 --map /data/run/sim.log.kloc.jsonl --before 8 --after 12 --json` | 10.6 |
+| 列举、检查或解释 SVA | `ksva` | SVA 文件、可选 property | lint、说明或三层 IR | `/home/host/kverif/tools/ksva explain --file /data/project/assertions/protocol.sv --property p_req_grant --json --strict` | 10.7 |
+| 维护项目验证知识和 debug brief | `kberif` | 当前项目根目录、kind/cards/details | topic、detail、brief、校验结果 | `cd /data/project/verification && /home/host/kverif/tools/kberif --json status` | 10.8 |
+| 受控启动编译、仿真和回归 | `keda-runner` | `.keda-runner.yaml`、allowlist action | 最终 argv、被执行程序输出和退出码 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target smoke --option TEST=basic --option SEED=123 --dry-run` | 10.9 |
+| 高频、跨进程复用 debug/coverage session | `kverif-loop-server/client` | Unix socket、后端、数据库 | JSON-RPC response | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock ping` | 10.10 |
+| Agent 接入或 LSF 部署自检 | `kverif-mcp`、`kverif-lsf-doctor` | 运行时环境变量 | MCP transport 或诊断结果 | `PYTHON=/home/host/kverif/.venv38/bin/python /home/host/kverif/tools/kverif-lsf-doctor` | 10.11 |
+
+### 0.2 可执行文件绝对路径
+
+| 工具变量 | VM 绝对路径 | 数据库/文件 | 主要用途 | 是否建议机器读取 JSON |
+| --- | --- | --- | --- | --- |
+| `KDEBUG` | `/home/host/kverif/tools/kdebug` | FSDB、`simv.daidir`、CRDB、RTL+UPF | 波形、连线、Tcl NPI、session | 是，使用 `--json` |
+| `KCOV` | `/home/host/kverif/tools/kcov` | VDB | coverage 查询和导出 | 是，使用 `--json` |
+| `KBIT` | `/home/host/kverif/tools/kbit` | literal、表达式、JSON values | 位运算和门禁条件 | 是，使用 `--json` |
+| `KENTRY` | `/home/host/kverif/tools/kentry` | YAML/JSON、JSONL | 多拍 entry 解码 | 是，使用 `--json` |
+| `KLOC` | `/home/host/kverif/tools/kloc` | 仿真日志、sidecar JSONL map | 位置还原、上下文、热点 | `resolve/context/stats` 建议 `--json` |
+| `KSVA` | `/home/host/kverif/tools/ksva` | `.sv`/`.sva` | SVA 静态分析和 IR | `explain --json`；`parse` 固定输出 JSON |
+| `KBERIF` | `/home/host/kverif/tools/kberif` | 项目文件、`.kberif` 状态 | 项目上下文 cards/details | 查询命令建议全局 `--json` |
+| `KEDA_RUNNER` | `/home/host/kverif/tools/keda-runner` | `.keda-runner.yaml` | allowlist EDA 调度 | 否，消费退出码和命令输出 |
+| `LOOP_SERVER` | `/home/host/kverif/tools/kverif-loop-server` | Unix socket | 长驻 session 服务 | 协议本身为 JSON |
+| `LOOP_CLIENT` | `/home/host/kverif/tools/kverif-loop-client` | Unix socket | 参数式 JSON-RPC client | 是，stdout 为 JSON response |
+| `KVERIF_MCP` | `/home/host/kverif/tools/kverif-mcp` | stdin/stdout transport | 可选 Agent 接入 | MCP 协议管理 |
+| `LSF_DOCTOR` | `/home/host/kverif/tools/kverif-lsf-doctor` | 环境和 backend | direct/LSF 部署诊断 | 以退出码和诊断文本为准 |
+
+### 0.3 调用方式对照
+
+| 调用方式 | 适用场景 | 输入写法 | 完整例子 | 输出处理 | 关键限制 |
+| --- | --- | --- | --- | --- | --- |
+| 快捷参数 | 人工排查、单个常用查询 | 子命令加具名参数 | `/home/host/kverif/tools/kdebug --json value-at --fsdb /data/run/waves.fsdb --signal tb_top.dut.ready --time 100ns --format hex` | 保存 stdout JSON，另存 stderr | 每个参数必须是独立 argv；不要 `eval` |
+| 通用 `action NAME` | 没有快捷子命令的 action | `--arg/--target/--limit/--output KEY=VALUE` | `/home/host/kverif/tools/kdebug --json action signal.scan --fsdb /data/run/waves.fsdb --arg signal=tb_top.dut.ready --arg begin=0ns --arg end=1us --limit max_rows=500` | 按 runtime schema 解析 `data` | `KEY=VALUE` 可重复；数组/对象必须作为一个 argv |
+| JSON request 文件 | 参数复杂、需要审计或重放 | 唯一位置参数为 request 文件 | `/home/host/kverif/tools/kdebug --json /data/requests/signal-scan.request.json` | request/response 成对归档 | JSON 只表达参数；FSDB/KDB/VDB 仍是实际输入 |
+| stdin JSON request | 流水线动态生成一次请求 | 位置参数 `-` | `printf '%s\n' '{"api_version":"kdebug.v1","action":"actions","args":{}}' \| /home/host/kverif/tools/kdebug --json -` | 按顶层 `ok` 判断 | stdout 不能混诊断文本 |
+| 命名 session | 同一大数据库连续查询 | 先 open，再传 `--session`，最后 close | `/home/host/kverif/tools/kdebug --json value-batch --session wave_104 --signal tb_top.valid --signal tb_top.ready --time 100ns` | 每个 response 独立保存 | 用 trap/finally 保证 close；session ID 当前用户内唯一 |
+| stdio loop | 单进程内大量 JSONL 请求 | `--stdio-loop`，一行一个 request | `/home/host/kverif/tools/kdebug --stdio-loop` | 首行等 `type=ready`，按 `request_id/id` 关联 | 协议 stdout 不可打印业务日志 |
+| loop server/client | 多脚本共享长驻服务 | Unix socket 加 client 子命令 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock --timeout-sec 0 debug-query --session wave0 --action value.at --arg signal=tb_top.clk --arg time=100ns --output-format json` | client stdout 为 JSON | server 生命周期和残留 session 由调用系统负责 |
+
+### 0.4 公共参数写法
+
+| 参数/形式 | 类型 | 必需性和默认值 | 可重复 | 示例值 | 完整 CLI 片段 | 校验或常见错误 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `--json` | flag | 可选；默认 kout/人类文本 | 否 | 无值 | `--json value-at ...` | `kdebug/kcov` 可放子命令前；`kberif` 必须放子命令前；不要再用 `grep` 解析 JSON |
+| `--fsdb FILE` | 文件路径 | 波形 action 必需；无默认值 | 否 | `/data/run/waves.fsdb` | `--fsdb /data/run/waves.fsdb` | 文件不存在、格式错误或缺 license 时 `ok=false`/非零退出 |
+| `--daidir DIR` | 目录路径 | KDB action 必需；无默认值 | 否 | `/data/build/simv.daidir` | `--daidir /data/build/simv.daidir` | 必须与本次 VCS `-kdb` 构建匹配，不能跨构建复用 |
+| `--vdb DIR` | 目录路径 | coverage action 必需，或改用 `--session` | 否 | `/data/run/simv.vdb` | `--vdb /data/run/simv.vdb` | `--fake` 仅合约测试，不能产生正式 coverage 结论 |
+| `--session ID` | 字符串 | 可替代重复数据库参数；无默认值 | 否 | `wave_104` | `--session wave_104` | 不存在或已关闭时返回 session 错误 |
+| `--signal NAME` | 完整层次名 | 依 action 必需 | `value-batch` 和工作流可重复 | `tb_top.dut.ready` | `--signal tb_top.dut.valid --signal tb_top.dut.ready` | 不要只传 RTL 叶子名；层次必须来自当前 FSDB/KDB |
+| `--time/--at TIME` | 时间字符串 | value/active-driver 必需 | 否 | `1040ns` | `--time 1040ns` | 单位和范围由 action schema/backend 校验 |
+| `--arg KEY=VALUE` | 自动类型化键值 | 通用 action 按 schema 决定 | 是 | `begin=0ns`、`overwrite=true` | `--arg signal=tb_top.valid --arg begin=0ns --arg end=1us` | 缺 `=` 返回 CLI 错误；`[`/`{` 开头会按 JSON 解析 |
+| `--target KEY=VALUE` | 自动类型化键值 | 通用资源按 schema 决定 | 是 | `filelist=/data/power/run.f` | `--target filelist=/data/power/run.f --target upf=/data/power/design.upf` | 资源路径/组合必须满足 action request schema |
+| `--limit KEY=VALUE` | 自动类型化键值 | 可选；默认由 action schema 决定 | 是 | `max_rows=500` | `--limit max_rows=500 --limit max_depth=8` | 使用正整数；结果截断仍需检查 response summary/warnings |
+| `--output KEY=VALUE` | 自动类型化键值 | 可选；默认工具输出策略 | 是 | `verbosity=compact` | `--output verbosity=compact` | 不等同 shell 重定向；stdout 文件仍用 `>` 保存 |
+| `--include/--exclude GLOB` | glob 字符串 | coverage 过滤可选 | 是 | `*fifo*` | `--include '*fifo*' --exclude '*assert*'` | 用引号阻止 shell 提前展开 glob |
+| `--max-items N` | 正整数 | 可选；默认由 action 决定 | 否 | `100` | `--max-items 100` | 同时检查 `truncated`/overflow；不要假定返回全集 |
+| `--timeout-ms N` | 正整数 | 可选；未传时使用 action/backend 默认值 | 否 | `120000` | `--timeout-ms 120000` | 只在调用方明确需要时设置；`0` 在部分 backend 表示“使用默认值”，不能统一理解为无限等待 |
+
+可直接用于 Shell 的变量表：
+
+```bash
+KVERIF_HOME=/home/host/kverif
+KDEBUG="$KVERIF_HOME/tools/kdebug"
+KCOV="$KVERIF_HOME/tools/kcov"
+KBIT="$KVERIF_HOME/tools/kbit"
+KENTRY="$KVERIF_HOME/tools/kentry"
+KLOC="$KVERIF_HOME/tools/kloc"
+KSVA="$KVERIF_HOME/tools/ksva"
+KBERIF="$KVERIF_HOME/tools/kberif"
+KEDA_RUNNER="$KVERIF_HOME/tools/keda-runner"
+LOOP_SERVER="$KVERIF_HOME/tools/kverif-loop-server"
+LOOP_CLIENT="$KVERIF_HOME/tools/kverif-loop-client"
+```
+
 ## 1. 二次开发契约
 
 kverif 对外稳定接口由四部分组成：
@@ -23,12 +113,12 @@ kverif 对外稳定接口由四部分组成：
 | JSON request/response | 复杂参数、可重放请求和结构化结果 | `kdebug --json request.json` |
 | 退出码 | 流程控制和 CI 判定 | `0` 成功，非 `0` 失败 |
 
-二次开发脚本不应依赖：
-
-- kdebug、kcov 或 MCP 的 Python/C++ 内部模块。
-- Tcl backend 的私有 procedure。
-- Verdi NPI 动态库或头文件。
-- 人类可读 `kout` 文本的列宽、缩进或措辞。
+| 不应依赖的内部实现 | 原因 | 应使用的公开替代接口 |
+| --- | --- | --- |
+| kdebug、kcov 或 MCP 的 Python/C++ 内部模块 | 内部包路径和函数不是跨版本合同，也不利于 Shell/Perl 调用 | `/home/host/kverif/tools/*` 可执行命令 |
+| Tcl backend 的私有 procedure | 私有 procedure 可随 action 实现调整 | `action NAME`、runtime `schema` 和 JSON response |
+| Verdi NPI 动态库或头文件 | 会绑定 Verdi ABI、编译器和 license 环境 | kdebug 的 Verdi 2018 Tcl NPI action |
+| 人类可读 `kout` 的列宽、缩进或措辞 | 文本显示可调整，不适合作为机器合同 | `--json` 后解析顶层 `ok`、`data`、`summary`、`warnings`、`error` |
 
 只要命令、参数和 JSON action 契约保持兼容，调用脚本可以使用任何语言。
 
@@ -784,65 +874,65 @@ KEDA_RUNNER="$KVERIF_HOME/tools/keda-runner"
 
 **全部快捷参数**
 
-| 参数 | 写入位置 | 功能 |
-| --- | --- | --- |
-| `--json` | `output.format=json` | 输出完整 JSON response；可放在子命令前或后 |
-| `--text/--kout` | 输出选择 | 强制输出 kout 文本 |
-| `--session/--session-id ID` | `target.session_id` | 复用命名 session |
-| `--name ID` | `args.name` | `session-open` 的 session 名 |
-| `--fsdb FILE` | `target.fsdb` | 指定原始 FSDB |
-| `--daidir DIR` | `target.daidir` | 指定 `simv.daidir` |
-| `--signal NAME` | `args.signal` | 单信号；在 `value-batch` 中可重复并组成 `args.signals` |
-| `--signals A,B,C` | `args.signals` | 逗号分隔的多信号列表 |
-| `--time/--at TIME` | `args.time` | 波形时间；active-driver 自动写为 `requested_time` |
-| `--requested-time TIME` | `args.requested_time` | 显式设置 active-driver 查询时间 |
-| `--format/--radix NAME` | `args.format/radix` | 值显示格式，常用 `bin`、`hex`、`dec` |
-| `--path PATH` | `args.path` | 层次或源码路径参数 |
-| `--scope PATH` | `args.scope` | 查询范围；`scope-list` 中也作为 path |
-| `--kind request/response` | `args.kind` | `schema` 返回 request 或 response schema |
-| `--action NAME` | `args.action` | `schema` 所查询的 action |
-| `--transport uds/tcp/file` | `args.transport` | session transport，普通同机调用优先 `uds` |
-| `--host HOST` | `args.host` | TCP 客户端可达地址 |
-| `--bind-host HOST` | `args.bind_host` | TCP daemon 监听地址 |
-| `--port N` | `args.port` | TCP 端口；`0` 可请求自动分配 |
-| `--include-source` | `args.include_source=true` | 返回源码证据 |
-| `--include-trace` | `args.include_trace=true` | 返回追踪过程 |
-| `--include-control` | `args.include_control=true` | 返回 active-driver 控制条件 |
-| `--include-raw` | `args.include_raw=true` | 返回较原始后端字段，结果会明显增大 |
-| `--verbosity compact/full/debug` | `output.verbosity` | 控制 response 详细度 |
-| `--max-rows N` | `limits.max_rows` | 限制波形行或列表行数 |
-| `--max-results/--max-items N` | `limits.max_results/max_items` | 限制返回项数 |
-| `--max-depth N` | `limits.max_depth`、`args.max_depth` | 限制图和因果追踪深度 |
-| `--timeout-ms N` | `limits.timeout_ms` | 仅在调用方明确需要时设置单请求期限 |
-| `--arg KEY=VALUE` | `args` | 通用 action 参数，可重复，支持 dotted key |
-| `--target KEY=VALUE` | `target` | 通用资源参数，可重复 |
-| `--limit KEY=VALUE` | `limits` | 通用数量/深度限制，可重复 |
-| `--output KEY=VALUE` | `output` | 通用输出控制，可重复 |
+| 参数 | 类型、必需性与默认值 | 可重复 | 写入 request | 示例值 | 完整 CLI 片段 | 校验和注意事项 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `--json` | flag；可选；默认 kout | 否 | `output.format=json` | 无值 | `--json value-at ...` | 可放在快捷子命令前或后；stdout 只用于 response |
+| `--text/--kout` | flag；可选 | 否 | 输出选择 | 无值 | `--kout actions` | 强制人类文本；机器脚本不要解析 kout |
+| `--session/--session-id ID` | 字符串；使用已打开 session 时必需 | 否 | `target.session_id`、兼容 `args.session_id` | `debug_104` | `--session debug_104` | session 不存在、类型不匹配或已关闭时失败 |
+| `--name ID` | 字符串；`session-open` 建议显式给出 | 否 | `args.name` | `debug_104` | `session-open --name debug_104 ...` | 当前用户 session 名应唯一，避免并发脚本互相关闭 |
+| `--fsdb FILE` | 文件路径；波形 action 必需，或改用 session | 否 | `target.fsdb` | `/data/run/waves.fsdb` | `--fsdb /data/run/waves.fsdb` | 必须是真实 FSDB，不是 JSON manifest |
+| `--daidir DIR` | 目录路径；设计 action 必需，或改用 session | 否 | `target.daidir` | `/data/build/simv.daidir` | `--daidir /data/build/simv.daidir` | 必须来自匹配本次 RTL/VCS 构建的 `-kdb` elaboration |
+| `--signal NAME` | 字符串；value/trace 类 action 必需 | 仅 `value-batch` 累加；其他 action 后值覆盖前值 | `args.signal` 或 `args.signals[]` | `tb_top.dut.ready` | `--signal tb_top.dut.valid --signal tb_top.dut.ready` | 使用 FSDB/KDB 中的完整层次名；批量查询也可用 `--signals` |
+| `--signals A,B,C` | 逗号分隔字符串；`value-batch` 可用 | 否 | `args.signals` | `tb_top.valid,tb_top.ready` | `--signals tb_top.valid,tb_top.ready` | 信号名若本身包含逗号，应改用重复 `--signal` |
+| `--time/--at TIME` | 时间字符串；value/active-driver 类必需 | 否 | `args.time`；active-driver 写 `args.requested_time` | `1040ns` | `--time 1040ns` | 时间格式和范围由 action/backend 校验 |
+| `--requested-time TIME` | 时间字符串；active-driver 可显式使用 | 否 | `args.requested_time` | `1040ns` | `--requested-time 1040ns` | 与 `--time` 二选一即可，后出现的值生效 |
+| `--format/--radix NAME` | 字符串；可选；action 默认通常为 `bin` | 否 | `args.format`、`args.radix` | `hex` | `--format hex` | 常用 `bin/hex/dec`；实际枚举以 action schema 为准 |
+| `--path PATH` | 字符串；按 action 可选/必需 | 否 | `args.path` | `tb_top.dut` | `--path tb_top.dut` | 表示设计/波形层次，不是操作系统路径时不要误加 `/` |
+| `--scope PATH` | 字符串；coverage-like 范围参数 | 否 | `args.scope`；`scope-list` 同时写 `args.path` | `tb_top.dut` | `--scope tb_top.dut` | action 不支持 scope 时 schema 会拒绝 |
+| `--kind request/response` | 枚举；`schema` 可选；默认 request | 否 | `args.kind` | `response` | `schema --action signal.scan --kind response` | 只用于 schema 查询 |
+| `--action NAME` | action 名；`schema` 必需 | 否 | `args.action` | `signal.scan` | `schema --action signal.scan --kind request` | 不存在时返回 `ACTION_NOT_FOUND` 或 schema 错误 |
+| `--transport uds/tcp/file` | 枚举；session-open 可选；同机优先 `uds` | 否 | `args.transport` | `uds` | `--transport uds` | transport 的可用性取决于部署；file 模式通常只用于兼容环境 |
+| `--host HOST` | 字符串；TCP session 可选 | 否 | `args.host` | `127.0.0.1` | `--host 127.0.0.1` | 客户端必须可达该地址 |
+| `--bind-host HOST` | 字符串；TCP session 可选 | 否 | `args.bind_host` | `127.0.0.1` | `--bind-host 127.0.0.1` | 不要在无访问控制时监听公网地址 |
+| `--port N` | 整数；TCP session 可选；`0` 可自动分配 | 否 | `args.port` | `0` | `--port 0` | 非整数按 CLI 标量规则解析后由 schema/backend 拒绝 |
+| `--include-source` | flag；可选；默认 false | 否 | `args.include_source=true` | 无值 | `trace-driver ... --include-source` | 增加源码证据，也可能增大 response |
+| `--include-trace` | flag；可选；默认 false | 否 | `args.include_trace=true` | 无值 | `active-driver ... --include-trace` | 用于保存因果追踪过程 |
+| `--include-control` | flag；可选；默认 false | 否 | `args.include_control=true` | 无值 | `active-driver ... --include-control` | 主要用于 active-driver 控制条件 |
+| `--include-raw` | flag；可选；默认 false | 否 | `args.include_raw=true` | 无值 | `value-at ... --include-raw` | 原始字段可能较大；业务脚本优先消费稳定字段 |
+| `--verbosity compact/full/debug` | 枚举；可选；默认 `compact` | 否 | `output.verbosity` | `full` | `--verbosity full` | `debug` 可能包含更多进程细节，不应默认长期归档 |
+| `--max-rows N` | 整数；可选；action 各有默认值 | 否 | `limits.max_rows` | `500` | `--max-rows 500` | 返回后检查 `truncated`，不能把 500 行当全集 |
+| `--max-results/--max-items N` | 整数；可选；action 各有默认值 | 否 | 同时写 `limits.max_results/max_items` | `200` | `--max-items 200` | 兼容不同 action 的结果上限字段 |
+| `--max-depth N` | 整数；可选；action 各有默认值 | 否 | `limits.max_depth`、`args.max_depth` | `8` | `--max-depth 8` | 图在深度上限停止时检查截断/告警字段 |
+| `--timeout-ms N` | 正整数；可选；未传时使用 backend 默认值 | 否 | `limits.timeout_ms` | `120000` | `--timeout-ms 120000` | `0` 在部分路径表示采用默认期限，并非统一的无限等待 |
+| `--arg KEY=VALUE` | 自动类型化键值；由 action schema 决定 | 是 | dotted key 写入 `args` | `query.mode=tail` | `--arg signal=tb_top.clk --arg begin=0ns --arg end=1us` | 缺 `=` 为 CLI 错误；数组/对象整体加引号 |
+| `--target KEY=VALUE` | 自动类型化键值；由 action schema 决定 | 是 | dotted key 写入 `target` | `upf=/data/power/design.upf` | `--target filelist=/data/power/run.f --target upf=/data/power/design.upf` | 用于没有专用快捷参数的资源字段 |
+| `--limit KEY=VALUE` | 自动类型化键值；可选 | 是 | dotted key 写入 `limits` | `max_rows=500` | `--limit max_rows=500 --limit max_depth=8` | 与快捷 limit 同时出现时，按 argv 处理后的最终字段值生效 |
+| `--output KEY=VALUE` | 自动类型化键值；可选 | 是 | dotted key 写入 `output` | `verbosity=compact` | `--output verbosity=compact` | 不代替 shell `>` 重定向 |
 
 **子命令、功能和专用参数**
 
-| 子命令 | 功能 | 必需/常用参数 |
-| --- | --- | --- |
-| `actions` | 列出运行时 action catalog | 无；可选 `--json` |
-| `schema` | 返回某 action 的 request/response schema | `--action NAME`；可选 `--kind` |
-| `session-open` | 加载 FSDB、KDB 或两者并启动可复用 session | `--name`；至少一个 `--fsdb/--daidir`；可选 transport 参数 |
-| `session-list` | 列出当前用户的 debug session | 无 |
-| `session-close` | 正常关闭 session | `--session` |
-| `session-doctor` | 查询 session、daemon 和 transport 健康状态 | `--session` |
-| `session-kill` | 强制终止无法正常关闭的 session | `--session` |
-| `session-gc` | 清理陈旧 session | 可用 `--arg` 传 schema 支持的筛选条件 |
-| `scope-list` | 列出 FSDB scope 层次 | `--fsdb` 或 `--session`；可选 `--path/--scope`、`--max-rows` |
-| `value-at` | 查询一个信号在一个时间点的值 | 资源、`--signal`、`--time`；可选 `--format` |
-| `value-batch` | 查询多个信号在同一时间点的值 | 资源、重复 `--signal` 或 `--signals`、`--time` |
-| `trace-driver` | 查静态 driver edge | KDB 资源、`--signal`；常用 `--include-source` |
-| `trace-graph` | 查 driver 方向依赖图 | KDB 资源、`--signal`；常用 `--max-depth`、`--include-trace` |
-| `source-context` | 按源码文件和行号读取上下文 | `--arg file=PATH --arg line=N`；可选设计 session、`--max-rows` |
-| `active-driver` | 联合波形时间和静态因果定位生效 driver | FSDB+KDB 或联合 session、`--signal`、`--time` |
-| `active-driver-chain` | 递归追踪 active-driver 因果链 | active-driver 参数；常用 `--max-depth` |
-| `action NAME` | 调用没有具名快捷命令的任意 action | action 名和对应 `--arg/--target/--limit/--output` |
-| `log doctor` | 检查一个 session 的公共/engine 日志是否存在及文件大小 | `--session`；可选 `--json`，且 `log` 必须是第一个参数 |
-| `log tail` | 汇总 tail 公共 action、stdio、lifecycle、transport 和 crash 日志 | `--session`；可选 `--lines N`，默认 `40` |
-| `log bundle` | 打包 session 日志用于问题单或离线分析 | `--session --out FILE`；可选 `--redact` 生成脱敏 bundle |
+| 子命令 | 用途 | 必需参数 | 常用可选参数/默认值 | 可直接运行的绝对路径例子 | 主要结果或错误 |
+| --- | --- | --- | --- | --- | --- |
+| `actions` | 列出运行时 action catalog | 无 | `--json`；默认 kout | `/home/host/kverif/tools/kdebug --json actions` | `data` 含 action/status/version；部署自检应归档 |
+| `schema` | 返回 action request/response schema | `--action NAME` | `--kind request/response`，默认 request；`--json` | `/home/host/kverif/tools/kdebug --json schema --action signal.scan --kind request` | action 不存在时返回 schema/action 错误 |
+| `session-open` | 加载 FSDB、KDB 或联合数据库 | `--name ID`；至少一个 `--fsdb/--daidir` | `--transport uds/tcp/file`、host/port；同机优先 uds | `/home/host/kverif/tools/kdebug --json session-open --name debug_104 --fsdb /data/run/waves.fsdb --daidir /data/build/simv.daidir --transport uds` | 返回 session ID、transport 和资源；资源加载失败时非零退出 |
+| `session-list` | 列出当前用户 debug session | 无 | `--json` | `/home/host/kverif/tools/kdebug --json session-list` | 返回可复用和陈旧 session 列表 |
+| `session-close` | 正常关闭 session | `--session ID` | `--json` | `/home/host/kverif/tools/kdebug --json session-close --session debug_104` | 正常释放 backend；不存在时返回 session 错误 |
+| `session-doctor` | 检查 daemon、transport 和 session 健康 | `--session ID` | `--json` | `/home/host/kverif/tools/kdebug --json session-doctor --session debug_104` | 返回 endpoint、PID、ping 和日志健康信息 |
+| `session-kill` | 强制终止无法正常关闭的 session | `--session ID` | `--json` | `/home/host/kverif/tools/kdebug --json session-kill --session debug_stuck` | 仅用于异常恢复；随后还应检查孤儿进程 |
+| `session-gc` | 清理陈旧 session | 无 | 可重复 `--arg KEY=VALUE`，具体筛选看 schema | `/home/host/kverif/tools/kdebug --json session-gc` | 返回扫描、清理和保留数量 |
+| `scope-list` | 列出 FSDB scope 层次 | `--fsdb FILE` 或 `--session ID` | `--path/--scope`；`--max-rows` action 默认 | `/home/host/kverif/tools/kdebug --json scope-list --fsdb /data/run/waves.fsdb --path tb_top --max-rows 100` | 返回 scope/signal 列表；检查截断状态 |
+| `value-at` | 查询单信号单时间点 | 波形资源、`--signal NAME --time TIME` | `--format` 通常默认 bin；include 开关 | `/home/host/kverif/tools/kdebug --json value-at --fsdb /data/run/waves.fsdb --signal tb_top.dut.ready --time 100ns --format hex` | 返回值、位宽、时间和格式；信号不存在时 `ok=false` |
+| `value-batch` | 同一时间批量采样 | 波形资源、多个信号、`--time TIME` | 重复 `--signal` 或 `--signals A,B`；`--format` | `/home/host/kverif/tools/kdebug --json value-batch --fsdb /data/run/waves.fsdb --signal tb_top.valid --signal tb_top.ready --time 100ns --format bin` | 返回逐信号结果；逐项检查缺失/未知状态 |
+| `trace-driver` | 查询静态 driver edge | KDB 资源、`--signal NAME` | `--include-source`、`--max-items` | `/home/host/kverif/tools/kdebug --json trace-driver --daidir /data/build/simv.daidir --signal tb_top.dut.ready --include-source --max-items 50` | 返回 driver edge 和源码证据；无 edge 不等同工具失败 |
+| `trace-graph` | 查询 driver 方向依赖图 | KDB 资源、`--signal NAME` | `--max-depth`、`--include-trace`、`--max-items` | `/home/host/kverif/tools/kdebug --json trace-graph --daidir /data/build/simv.daidir --signal tb_top.dut.ready --max-depth 8 --include-trace --max-items 200` | 返回 node/edge/trace；检查深度和条目截断 |
+| `source-context` | 按文件和行号读取源码上下文 | `--arg file=PATH --arg line=N` | `--max-rows`；可带设计 session | `/home/host/kverif/tools/kdebug --json source-context --arg file=/data/project/rtl/ready_ctrl.sv --arg line=127 --max-rows 40` | 返回目标行和前后文；路径/行号无效时失败 |
+| `active-driver` | 联合 FSDB 时间与 KDB 静态因果 | 联合资源、`--signal NAME --time TIME` | `--include-control`、`--include-trace` | `/home/host/kverif/tools/kdebug --json active-driver --fsdb /data/run/waves.fsdb --daidir /data/build/simv.daidir --signal tb_top.dut.ready --time 1040ns --include-control --include-trace` | 返回当前生效 driver、控制条件和证据链 |
+| `active-driver-chain` | 递归追踪 active-driver 链 | active-driver 的全部必需参数 | `--max-depth`、control/trace 开关 | `/home/host/kverif/tools/kdebug --json active-driver-chain --fsdb /data/run/waves.fsdb --daidir /data/build/simv.daidir --signal tb_top.dut.ready --time 1040ns --max-depth 6` | 返回分层因果链；检查 cycle、深度上限和截断 |
+| `action NAME` | 调用任意公开 action | action 名及 schema 的必需字段 | 可重复 `--arg/--target/--limit/--output` | `/home/host/kverif/tools/kdebug --json action signal.scan --fsdb /data/run/waves.fsdb --arg signal=tb_top.valid --arg begin=0ns --arg end=1us --limit max_rows=500` | 先查 request schema；非法字段/缺字段返回结构化错误 |
+| `log doctor` | 检查公共/engine 日志是否存在 | `--session ID` | `--json`；`log` 必须是第一个参数 | `/home/host/kverif/tools/kdebug log doctor --session debug_104 --json` | 返回日志路径、大小和健康信息，不进入 action dispatcher |
+| `log tail` | 汇总最近的 action/stdio/lifecycle/transport/crash 日志 | `--session ID` | `--lines N`，默认 `40` | `/home/host/kverif/tools/kdebug log tail --session debug_104 --lines 80` | 人类文本；用于诊断，不作为业务 JSON |
+| `log bundle` | 打包 session 日志 | `--session ID --out FILE` | `--redact` 建议开启 | `/home/host/kverif/tools/kdebug log bundle --session debug_104 --out /data/reports/debug_104.logs.tgz --redact` | stdout 返回 archive 路径；注意权限和磁盘空间 |
 
 **每个快捷子命令的例子**
 
@@ -907,23 +997,23 @@ KDEBUG=/home/host/kverif/tools/kdebug
 只负责参数校验、临时计划文件和 JSON response，不直接链接 NPI。当前状态为
 `experimental`，二次开发脚本应在部署阶段查询 `actions` 和 request schema 后再启用。
 
-| action | 资源 | 必需 `args` | 可选 `args` | 主要结果 |
-| --- | --- | --- | --- | --- |
-| `npi.capabilities` | 无 | 无 | 无 | 逐域列出 Verdi 当前实际注册的 NPI Tcl command |
-| `netlist.resolve` | `--daidir` | `name` | `object_type=npiNl*` | flattened netlist 对象固定属性 |
-| `netlist.iterate` | `--daidir` | `object_type=npiNl*` | `name`、`--limit max_rows=N` | 某 reference 下的网表对象列表；`name` 为空且 type 为 `npiNlInst` 时列 top instance |
-| `text.line` | `--daidir` | `file`、`line` | 无 | NPI Text Model 行内容和 word 数 |
-| `text.words` | `--daidir` | `file`、`line` | `--limit max_rows=N` | word、序号和 Text Word Attribute |
-| `text.replace_line` | `--daidir` | `file`、`line`、`content`、`output` | `overwrite=true` | 修改后的源码副本；禁止原地覆盖输入源文件 |
-| `dm.add_net` | `--daidir` | `module`、`name`、`output_dir` | `net_type`、`packed_left/right`、`overwrite` | DM 修改后的设计目录 |
-| `dm.clone_module` | `--daidir` | `module`、`new_name`、`output_dir` | `overwrite` | clone module 和 DM writer 输出目录 |
-| `vcs.summary` | `--daidir` | 无 | `database` 可覆盖 target | VCS 编译 warning/error、设计统计和仿真统计 |
-| `power.resolve` | 含 Power Model 的 `--daidir`，或 `target.filelist+upf` | `name` | `object_type=npiPw*` | Power Model 对象固定属性 |
-| `power.list` | 含 Power Model 的 `--daidir`，或 `target.filelist+upf` | `name`、`object_type=npiPw*` | `--limit max_rows=N` | Power Model 一对多关系列表 |
-| `crdb.resolve` | 无 | `crdb`、`name` | `level=RTL/GATE` | CRDB 对象固定属性 |
-| `crdb.correlates` | 无 | `crdb`、`name` | `level`、`--limit max_rows=N` | RTL/GATE correlated object 列表 |
-| `transaction.writer.create` | 无 | `output`、`stream`、`transactions` | `unit`、`begin_time`、`relations`、`overwrite` | 完整关闭的 transaction FSDB、计数和结束时间 |
-| `fsdb.writer.create_scope` | 无 | `output`，以及 `operations` 或 `scopes` | `unit`、`begin_time`、`end_time_delta`、`overwrite` | 完整关闭的 signal FSDB scope 层次 |
+| action | 资源和必需 `args` | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要 `data` | 常见错误 |
+| --- | --- | --- | --- | --- | --- |
+| `npi.capabilities` | 无资源、无 args | 无 | `/home/host/kverif/tools/kdebug --json action npi.capabilities` | 按 domain 列当前 Verdi 实际注册的 Tcl NPI command | `VERDI_NOT_FOUND`、`LICENSE_UNAVAILABLE` |
+| `netlist.resolve` | `--daidir`；`name` | `object_type=npiNl*` 可选 | `/home/host/kverif/tools/kdebug --json action netlist.resolve --daidir /data/build/simv.daidir --arg name=top.u_dut.ready --arg object_type=npiNlNet` | flattened 对象的 name/full_name/type/size 等固定属性 | `NETLIST_OBJECT_NOT_FOUND`、`INVALID_ENUM` |
+| `netlist.iterate` | `--daidir`；`object_type=npiNl*` | `name` 可选；`max_rows` 默认 `200` | `/home/host/kverif/tools/kdebug --json action netlist.iterate --daidir /data/build/simv.daidir --arg name=top.u_dut --arg object_type=npiNlNet --limit max_rows=200` | `items/count/truncated`；name 为空且 type 为 `npiNlInst` 时列 top | `NETLIST_OBJECT_NOT_FOUND`、`INVALID_ENUM` |
+| `text.line` | `--daidir`；`file`、正整数 `line` | 无 | `/home/host/kverif/tools/kdebug --json action text.line --daidir /data/build/simv.daidir --arg file=/data/project/rtl/top.sv --arg line=127` | full_name、line、content、word_count | `TEXT_FILE_NOT_FOUND`、`TEXT_LINE_NOT_FOUND` |
+| `text.words` | `--daidir`；`file`、正整数 `line` | `max_rows` 默认 `200` | `/home/host/kverif/tools/kdebug --json action text.words --daidir /data/build/simv.daidir --arg file=/data/project/rtl/top.sv --arg line=127 --limit max_rows=100` | words 的 index/text/attribute、count、truncated | Text file/line not found |
+| `text.replace_line` | `--daidir`；`file/line/content/output` | `overwrite=false` | `/home/host/kverif/tools/kdebug --json action text.replace_line --daidir /data/build/simv.daidir --arg file=/data/project/rtl/top.sv --arg line=127 --arg 'content=  assign ready = valid;' --arg output=/data/reports/top.patched.sv` | original、replacement、output；只写副本 | `IN_PLACE_EDIT_FORBIDDEN`、`OUTPUT_EXISTS`、`TEXT_REPLACE_FAILED` |
+| `dm.add_net` | `--daidir`；`module/name/output_dir` | `net_type=npiDmNetWire`；packed range 可选；`overwrite=false` | `/home/host/kverif/tools/kdebug --json action dm.add_net --daidir /data/build/simv.daidir --arg module=top --arg name=debug_bus --arg packed_left=7 --arg packed_right=0 --arg output_dir=/data/reports/dm-add-net` | module、net、range 和写出的设计目录 | `DM_MODULE_NOT_FOUND`、`INVALID_IDENTIFIER`、`DM_WRITE_FAILED` |
+| `dm.clone_module` | `--daidir`；`module/new_name/output_dir` | `overwrite=false` | `/home/host/kverif/tools/kdebug --json action dm.clone_module --daidir /data/build/simv.daidir --arg module=alu --arg new_name=alu_debug --arg output_dir=/data/reports/dm-clone` | 原/新 module 名和设计输出目录 | `DM_MODULE_NOT_FOUND`、`DM_CLONE_FAILED`、`OUTPUT_EXISTS` |
+| `vcs.summary` | `--daidir`；无必需 args | `args.database` 可覆盖 target | `/home/host/kverif/tools/kdebug --json action vcs.summary --daidir /data/build/simv.daidir` | tool、compilation、design、simulation 统计 | `VCS_DB_OPEN_FAILED`；数据库需 `-Xdump_vcsdb` 能力 |
+| `power.resolve` | Power daidir 或 `target.filelist+upf`；`name` | `object_type=npiPw*` 可选 | `/home/host/kverif/tools/kdebug --json action power.resolve --daidir /data/build/power_simv.daidir --arg name=top/PD_TOP --arg object_type=npiPwPowerDomain` | Power object 固定属性 | `POWER_OBJECT_NOT_FOUND`、`LICENSE_UNAVAILABLE` |
+| `power.list` | Power daidir 或 source target；`name/object_type` | `max_rows` 默认 `200` | `/home/host/kverif/tools/kdebug --json action power.list --daidir /data/build/power_simv.daidir --arg name=top/PD_TOP --arg object_type=npiPwElement --limit max_rows=100` | Power 关系列表、count、truncated | `POWER_OBJECT_NOT_FOUND`、`LICENSE_UNAVAILABLE` |
+| `crdb.resolve` | `crdb`、`name` | `level=RTL`；也可 `GATE` | `/home/host/kverif/tools/kdebug --json action crdb.resolve --arg crdb=/data/build/dut.crdb --arg name=top.u_dut.ready --arg level=RTL` | CRDB 对象固定属性 | `CRDB_OPEN_FAILED`、`CRDB_OBJECT_NOT_FOUND` |
+| `crdb.correlates` | `crdb`、`name` | `level=RTL`；`max_rows` 默认 `200` | `/home/host/kverif/tools/kdebug --json action crdb.correlates --arg crdb=/data/build/dut.crdb --arg name=top.u_dut.ready --arg level=RTL --limit max_rows=100` | correlated objects、count、truncated | CRDB open/object 错误 |
+| `transaction.writer.create` | `output/stream/transactions` | `unit=1ns`、`begin_time=0`、relations 空、`overwrite=false` | `/home/host/kverif/tools/kdebug --json action transaction.writer.create --arg output=/data/reports/transactions.fsdb --arg stream=bus.requests --arg 'transactions=[{"start_delta":10,"duration":20,"type":"npiFsdbwTransTransaction","label":"req0"}]'` | 完整关闭的 transaction FSDB、计数和结束时间 | `INVALID_ARGUMENT`、`INVALID_PLAN`、`OUTPUT_EXISTS`、`FSDB_WRITER_FAILED` |
+| `fsdb.writer.create_scope` | `output`，以及 `operations` 或 `scopes` | `unit=1ns`、`begin_time=0`、`end_time_delta=0`、`overwrite=false` | `/home/host/kverif/tools/kdebug --json action fsdb.writer.create_scope --arg output=/data/reports/hierarchy.fsdb --arg 'operations=[{"op":"scope","type":"npiFsdbScopeSvModule","name":"top"}]' --arg end_time_delta=100` | 完整关闭的 signal FSDB scope 层次 | `INVALID_ARGUMENT`、`INVALID_PLAN`、`OUTPUT_EXISTS`、`FSDB_WRITER_FAILED` |
 
 固定属性是有意的：二次开发者不能把任意 NPI property 或 Tcl 片段塞进 action。这样可以
 稳定 schema、限制输出规模，并避免把项目字符串变成 `eval`。确实需要新属性时，应新增并
@@ -1097,56 +1187,56 @@ KDebug response 仍应原样归档，不能只保存二次推导后的布尔值�
 
 **公共查询参数**
 
-| 参数 | 功能 |
-| --- | --- |
-| `--json` | 输出 JSON response；也可作为全局选项放在子命令前 |
-| `--session/--session-id ID` | 使用已打开 coverage session |
-| `--vdb DIR` | 指定真实 VDB；普通查询会使用临时 session |
-| `--fake` | 使用内置 coverage 数据 |
-| `--scope PATH` | 限定设计层次 |
-| `--test NAME` | 限定 test；默认通常是 merged |
-| `--metrics A,B,C` | metric 列表，例如 `line,toggle,branch,condition` |
-| `--include GLOB` | include glob，可重复 |
-| `--exclude GLOB` | exclude glob，可重复 |
-| `--match-field FIELD` | glob 匹配字段，如 `full_name`、`name`、`file` |
-| `--case-insensitive` | glob 匹配忽略大小写 |
-| `--max-items N` | 最大内联或导出 item 数 |
-| `--overflow MODE` | 超限策略：`truncate`、`error`、`to_file`、`summary_only` |
-| `--output-mode MODE` | `inline`、`file`、`both` 或 `summary_only` |
-| `--output-path PATH` | artifact 路径 |
-| `--artifact-format FORMAT` | `json`、`ndjson`、`csv` 或 `md` |
-| `--allow-absolute-path` | 允许 `--output-path` 使用绝对路径 |
-| `--sort-by FIELD` | 排序字段 |
-| `--sort-order asc/desc` | 排序方向 |
-| `--arg KEY=VALUE` | 写入 action `args`，可重复并支持 dotted key |
-| `--target KEY=VALUE` | 写入 request `target`，可重复 |
+| 参数 | 类型、必需性与默认值 | 可重复 | 示例值 | 完整 CLI 片段 | 写入位置/校验行为 |
+| --- | --- | --- | --- | --- | --- |
+| `--json` | flag；可选；默认 kout | 否 | 无值 | `--json cov-summary ...` | response format 为 JSON；也可放在子命令前 |
+| `--session/--session-id ID` | 字符串；复用 session 时必需 | 否 | `cov_nightly` | `--session cov_nightly` | 写 `target.session_id`；与一次性 `--vdb` 二选一即可 |
+| `--vdb DIR` | 目录路径；一次性真实查询必需 | 否 | `/data/run/simv.vdb` | `--vdb /data/run/simv.vdb` | 写 `target.vdb`；工具自动创建和关闭临时 session |
+| `--fake` | flag；可选；默认 false | 否 | 无值 | `cov-summary --fake --json` | 只用于无 EDA 合约测试，正式报告禁止使用 |
+| `--scope PATH` | 字符串；可选 | 否 | `tb_top.dut` | `--scope tb_top.dut` | 写 `args.scope`；层次不存在时可能返回空结果或对象错误 |
+| `--test NAME` | 字符串；可选；backend 通常使用 `merged` | 否 | `merged` | `--test merged` | 写 `args.test`；不存在时返回 `TEST_NOT_FOUND` |
+| `--metrics A,B,C` | 逗号分隔枚举；依 action 可选 | 否 | `line,toggle,branch` | `--metrics line,toggle,branch` | 可选值 `line/toggle/branch/condition/fsm/assert/functional` |
+| `--include GLOB` | glob；可选；默认空列表 | 是 | `*fifo*` | `--include '*fifo*' --include '*arbiter*'` | 写 `args.query.include_patterns[]`；必须引用以阻止 shell 展开 |
+| `--exclude GLOB` | glob；可选；默认空列表 | 是 | `*assert*` | `--exclude '*assert*'` | 写 `args.query.exclude_patterns[]` |
+| `--match-field FIELD` | 字符串；过滤时可选 | 否 | `full_name` | `--match-field full_name` | 常用 `full_name/name/file`；字段不存在时不会按其他字段猜测 |
+| `--case-insensitive` | flag；可选；默认大小写敏感 | 否 | 无值 | `--case-insensitive` | 写 `args.query.case_sensitive=false` |
+| `--max-items N` | 非负整数；可选；action 默认 | 否 | `100` | `--max-items 100` | 写 limit；返回后检查 overflow/truncated |
+| `--overflow MODE` | 枚举；可选；action 默认 | 否 | `to_file` | `--overflow to_file` | 仅 `truncate/error/to_file/summary_only` |
+| `--output-mode MODE` | 枚举；可选；查询通常 inline | 否 | `both` | `--output-mode both` | 仅 `inline/file/both/summary_only` |
+| `--output-path PATH` | 文件路径；file/both 时必需 | 否 | `/data/reports/holes.ndjson` | `--output-path /data/reports/holes.ndjson` | 默认限制绝对路径；需同时确认父目录权限 |
+| `--artifact-format FORMAT` | 枚举；导出时可选/必需 | 否 | `ndjson` | `--artifact-format ndjson` | 仅 `json/ndjson/csv/md` |
+| `--allow-absolute-path` | flag；绝对 artifact 路径时必需 | 否 | 无值 | `--allow-absolute-path` | 明确允许 `--output-path /...`；仍受安全路径校验 |
+| `--sort-by FIELD` | 字符串；可选 | 否 | `full_name` | `--sort-by full_name` | 写 `args.sort.by`；字段支持范围由 action 决定 |
+| `--sort-order asc/desc` | 枚举；可选 | 否 | `asc` | `--sort-order asc` | 只接受 `asc/desc` |
+| `--arg KEY=VALUE` | 自动类型化键值；按 schema | 是 | `query.match_field=full_name` | `--arg 'query.include_patterns=["*fifo*"]' --arg query.match_field=full_name` | 支持 dotted key；缺 `=` 返回 `INVALID_CLI` |
+| `--target KEY=VALUE` | 自动类型化键值；按 schema | 是 | `session_id=cov_nightly` | `--target session_id=cov_nightly` | 写任意公开 target 字段；优先使用已有专用参数 |
 
 **子命令和专用参数**
 
-| 子命令 | 功能 | 专用参数 |
-| --- | --- | --- |
-| `actions` | 列出 coverage action | 无 |
-| `schema` | 返回 action schema | `--action NAME`；`--kind request/response` |
-| `open` | 打开命名 VDB session | `--vdb`；可选 `--name`、`--fake`、`--reuse/--no-reuse`、`--reopen` |
-| `status` | 查询 session 状态 | 必需 `--session` |
-| `close` | 关闭 session | 必需 `--session` |
-| `tests` | 列出 VDB 中 tests | session 或 VDB；可选公共过滤参数 |
-| `metrics` | 列出可用 metrics | session 或 VDB；可选 `--scope`、`--test` |
-| `scope-summary` | 查询一个 scope 的 metric 摘要 | `--scope`、`--metrics` |
-| `scope-children` | 查询直接或递归子 scope | `--scope`；可选 `--recursive` |
-| `scope-search` | 按 glob 搜索 scope | include/exclude/match/sort/limit 参数 |
-| `cov-summary` | 计算 code coverage 汇总 | `--metrics`；可选 `--group-by` |
-| `cov-holes` | 返回未覆盖 code objects | `--metrics` 及过滤、排序、限制参数 |
-| `object-get` | 精确读取 coverage object | `--object/--name`；可选 `--include-children`、`--max-children` |
-| `object-search` | 搜索 coverage object | include/exclude/match/sort/limit 参数 |
-| `functional-summary` | functional coverage 汇总 | `--levels`；可选 `--group-by` |
-| `functional-holes` | functional holes | `--levels` 及过滤、排序、限制参数 |
-| `source-map` | 将源码文件/行映射到 coverage | `--file`、`--line`；可选 `--window` |
-| `export-summary` | 导出 code coverage 摘要 | `--metrics`、`--group-by` 和输出参数 |
-| `export-holes` | 导出 code coverage holes | `--metrics`、过滤参数和输出参数 |
-| `export-scope-tree` | 导出 scope tree | `--recursive/--no-recursive` 和输出参数 |
-| `export-functional` | 导出 functional summary 或 holes | `--levels`、`--mode summary/holes` 和输出参数 |
-| `query ACTION` | 调用任意 kcov action | action 名和 `--arg/--target` |
+| 子命令 | 用途 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要结果或错误 |
+| --- | --- | --- | --- | --- | --- |
+| `actions` | 列出 coverage action | 无 | `--json` | `/home/host/kverif/tools/kcov --json actions` | 返回 action catalog，部署时归档 |
+| `schema` | 返回 action schema | `--action NAME` | `--kind request/response`，默认 request | `/home/host/kverif/tools/kcov --json schema --action cov.holes --kind request` | action 不存在时 `ACTION_NOT_FOUND` |
+| `open` | 打开命名 VDB session | `--vdb DIR` | `--name`；`--reuse/--no-reuse`；`--reopen`；`--fake` 仅测试 | `/home/host/kverif/tools/kcov --json open --vdb /data/run/simv.vdb --name cov_nightly --no-reuse` | 返回 session 信息；VDB 无效时 `VDB_OPEN_FAILED` |
+| `status` | 查询 session 状态 | `--session ID` | 公共输出参数 | `/home/host/kverif/tools/kcov --json status --session cov_nightly` | 返回 VDB、backend、状态和统计 |
+| `close` | 关闭 session | `--session ID` | `--json` | `/home/host/kverif/tools/kcov --json close --session cov_nightly` | 释放 coverage backend；不存在时 session 错误 |
+| `tests` | 列出 VDB tests | `--session ID` 或 `--vdb DIR` | filter/sort/max 参数 | `/home/host/kverif/tools/kcov --json tests --vdb /data/run/simv.vdb --max-items 50` | 返回 test 列表；测试名可用于后续 `--test` |
+| `metrics` | 列出可用 metrics | session 或 VDB | `--scope`、`--test` | `/home/host/kverif/tools/kcov --json metrics --vdb /data/run/simv.vdb --scope tb_top.dut --test merged` | 返回输入数据库实际可查询 metric |
+| `scope-summary` | 查询 scope 的 metric 摘要 | session/VDB | `--scope`、`--metrics` | `/home/host/kverif/tools/kcov --json scope-summary --vdb /data/run/simv.vdb --scope tb_top.dut --metrics line,toggle,branch` | 返回分 metric covered/total/percent |
+| `scope-children` | 查询直接或递归子 scope | session/VDB | `--scope`；`--recursive` 默认 false；max/filter | `/home/host/kverif/tools/kcov --json scope-children --vdb /data/run/simv.vdb --scope tb_top.dut --recursive --max-items 200` | 返回子 scope；检查截断 |
+| `scope-search` | 按 glob 搜索 scope | session/VDB | include/exclude/match/sort/max | `/home/host/kverif/tools/kcov --json scope-search --vdb /data/run/simv.vdb --include '*lsu*' --exclude '*assert*' --match-field full_name --max-items 50` | 返回匹配 scope；glob 应加引号 |
+| `cov-summary` | 计算 code coverage 汇总 | session/VDB | `--metrics`；`--group-by` | `/home/host/kverif/tools/kcov --json cov-summary --vdb /data/run/simv.vdb --metrics line,toggle,branch --group-by metric` | 返回总计和分组百分比 |
+| `cov-holes` | 返回未覆盖 code objects | session/VDB | metrics/filter/sort/max/overflow | `/home/host/kverif/tools/kcov --json cov-holes --vdb /data/run/simv.vdb --metrics line,toggle --scope tb_top.dut --max-items 100 --sort-by full_name --sort-order asc` | 返回 holes；超限行为由 `--overflow` 控制 |
+| `object-get` | 精确读取 coverage object | session/VDB、`--object NAME` | `--include-children`、`--max-children` | `/home/host/kverif/tools/kcov --json object-get --vdb /data/run/simv.vdb --object tb_top.dut.u_fifo.full --include-children --max-children 20` | 不存在时 `OBJECT_NOT_FOUND` |
+| `object-search` | 搜索 coverage object | session/VDB | include/exclude/match/sort/max | `/home/host/kverif/tools/kcov --json object-search --vdb /data/run/simv.vdb --include '*fifo*' --match-field full_name --case-insensitive --max-items 20` | 返回匹配 object 和 coverage 字段 |
+| `functional-summary` | 汇总 functional coverage | session/VDB | `--levels`；`--group-by` | `/home/host/kverif/tools/kcov --json functional-summary --vdb /data/run/simv.vdb --levels covergroup,coverpoint,cross --group-by covergroup` | 返回 covergroup/point/cross 汇总 |
+| `functional-holes` | 查询 functional holes | session/VDB | levels/filter/sort/max | `/home/host/kverif/tools/kcov --json functional-holes --vdb /data/run/simv.vdb --levels coverpoint,cross,bin --include '*protocol*' --max-items 100` | 返回未命中 functional object/bin |
+| `source-map` | 将源码文件/行映射到 coverage | session/VDB、`--file PATH --line N` | `--window N` | `/home/host/kverif/tools/kcov --json source-map --vdb /data/run/simv.vdb --file /data/rtl/fifo.sv --line 127 --window 5` | 返回附近 coverage object；无映射时可能为空 |
+| `export-summary` | 导出 code summary | session/VDB、输出参数 | metrics/group/filter；format `json/ndjson/csv/md` | `/home/host/kverif/tools/kcov --json export-summary --vdb /data/run/simv.vdb --metrics line,toggle,branch --group-by scope --output-mode file --output-path /data/reports/summary.csv --artifact-format csv --allow-absolute-path` | response summary 返回 artifact 路径和格式 |
+| `export-holes` | 导出 code holes | session/VDB、输出参数 | metrics/filter/max/overflow | `/home/host/kverif/tools/kcov --json export-holes --vdb /data/run/simv.vdb --metrics branch,condition --max-items 1000 --output-mode both --output-path /data/reports/holes.ndjson --artifact-format ndjson --allow-absolute-path` | 可同时返回 inline 摘要和文件 |
+| `export-scope-tree` | 导出 scope tree | session/VDB、输出参数 | `--recursive/--no-recursive` | `/home/host/kverif/tools/kcov --json export-scope-tree --vdb /data/run/simv.vdb --scope tb_top.dut --recursive --output-mode file --output-path /data/reports/scopes.json --artifact-format json --allow-absolute-path` | 返回层次 artifact；检查递归和截断 |
+| `export-functional` | 导出 functional summary/holes | session/VDB、输出参数 | `--levels`；`--mode summary/holes` | `/home/host/kverif/tools/kcov --json export-functional --vdb /data/run/simv.vdb --levels covergroup,coverpoint,cross,bin --mode holes --output-mode file --output-path /data/reports/functional.md --artifact-format md --allow-absolute-path` | 返回 functional artifact 元数据 |
+| `query ACTION` | 调用任意 kcov action | action 名、session/VDB | 可重复 `--arg/--target` 及公共参数 | `/home/host/kverif/tools/kcov --json query cov.object.search --vdb /data/run/simv.vdb --arg 'query.include_patterns=["*arbiter*"]' --arg query.match_field=full_name --max-items 20` | 先查询 schema；缺字段返回 `SCHEMA_INVALID` |
 
 `--levels` 支持 `covergroup,coverpoint,cross,bin`。`--group-by` 的含义由 action 决定，常用值包括 `metric`、`scope`、`source_file`、`covergroup`、`coverpoint`、`cross` 和 `bin`；正式接入前应使用 `schema` 确认当前版本。
 
@@ -1223,36 +1313,38 @@ VDB=/data/regress/nightly/simv.vdb
 
 `kbit` 不读 RTL、FSDB 或 KDB。它负责把调试流程中的 SystemVerilog literal、位切片、拼接、扩展、mask 和布尔条件变成确定性结果，避免 Shell、Perl 或 Agent 手工计算位宽和符号。
 
-| 公共参数 | 功能 |
-| --- | --- |
-| `--json` | 输出 `kbit.result.v1` 或 `kbit.error.v1` JSON |
-| `--pretty` | pretty-print JSON；只在同时使用 `--json` 时有意义 |
-| `--state 2/2state` | 默认模式；遇到 X/Z/? 时失败，防止把未知值当确定值 |
-| `--state 4/4state` | 保留 4-state literal；不支持的传播运算返回明确错误 |
-| `--width N` | `conv/eval` 将结果调整为 N bit |
-| `--signed/--unsigned` | `conv/eval` 强制结果符号解释，二者互斥 |
+| 公共参数 | 类型和默认值 | 适用子命令 | 示例片段 | 结果/错误行为 |
+| --- | --- | --- | --- | --- |
+| `--json` | flag；默认人类文本 | 除 `agent serve` 外全部 | `conv "8'hff" --json` | 输出 `kbit.result.v1` 或 `kbit.error.v1`；按顶层 `ok` 判断 |
+| `--pretty` | flag；默认 false | 与 `--json` 同用 | `--json --pretty` | 只改变 JSON 缩进，不改变字段 |
+| `--state 2/2state` | 枚举；默认 `2state` | 所有位值运算 | `--state 2` | literal 含 X/Z/? 时 `FOUR_STATE_LITERAL` |
+| `--state 4/4state` | 枚举；显式开启 | 所有位值运算 | `--state 4` | 保留未知位；不支持的传播运算返回 `FOUR_STATE_UNSUPPORTED` |
+| `--width N` | 正整数；无默认覆盖 | `conv/eval` | `--width 16` | 调整结果位宽；非法位宽返回 `WIDTH_OUT_OF_RANGE` |
+| `--signed/--unsigned` | 互斥 flag；默认沿用输入解释 | `conv/eval` | `--signed` | 同时出现由 argparse 拒绝 |
+| `--var NAME=VALUE` | 键值；默认空列表 | `eval/check` | `--var "addr=32'h1234"` | 可重复；未知变量返回 `UNKNOWN_VARIABLE` |
+| `--values FILE` | JSON 文件；可选 | `check` | `--values /data/run/values.json` | 与变量集合一起提供检查上下文；文件/结构无效时非零退出 |
 
-| 子命令 | 参数和功能 |
-| --- | --- |
-| `conv VALUE` | 解析并规范化 SV literal；支持 `--width` 和符号参数 |
-| `eval EXPR` | 计算受限 SV 表达式；`--var NAME=VALUE` 可重复 |
-| `slice VALUE MSB LSB` | 提取闭区间 `[MSB:LSB]` |
-| `index VALUE BIT` | 提取一个 bit |
-| `concat VALUE...` | 按参数顺序拼接多个值 |
-| `repeat COUNT VALUE` | 重复拼接 VALUE |
-| `trunc VALUE --to N` | 截断到 N bit |
-| `zext VALUE --to N` | 零扩展到 N bit |
-| `sext VALUE --to N` | 符号扩展到 N bit |
-| `reverse VALUE` | 反转 bit 顺序 |
-| `mask --width N [--lsb B]` | 从 bit B 开始生成 N bit 连续 mask，B 默认 `0` |
-| `align VALUE --to N` | 对齐到 N bit 边界 |
-| `popcount VALUE` | 统计置位数 |
-| `onehot VALUE` | 检查恰好一位为 1 |
-| `onehot0 VALUE` | 检查最多一位为 1 |
-| `gray2bin VALUE` | Gray 转 binary |
-| `bin2gray VALUE` | binary 转 Gray |
-| `check --expr EXPR` | 对 `--var` 或 `--values FILE` 提供的一组值执行条件检查 |
-| `agent serve --stdio` | 启动一行请求/一行响应的 stdio agent；普通脚本无需使用 |
+| 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要 JSON 结果 | 常见失败 |
+| --- | --- | --- | --- | --- | --- |
+| `conv` | `VALUE` | `--width`、`--signed/--unsigned`、`--state 2` | `/home/host/kverif/tools/kbit conv "8'shff" --width 16 --signed --json` | `result.width/signed/bin/hex/dec` | literal 语法、未知位或宽度非法 |
+| `eval` | `EXPR` | 可重复 `--var`；width/sign/state | `/home/host/kverif/tools/kbit eval "(addr >> 2) & 8'hff" --var "addr=32'h00001234" --json` | 表达式结果及已知时的 `result.bool` | `PARSE_ERROR`、`UNKNOWN_VARIABLE`、`DIVISION_BY_ZERO` |
+| `slice` | `VALUE MSB LSB` | `--state 2`、JSON 开关 | `/home/host/kverif/tools/kbit slice "32'hdead_beef" 15 8 --json` | `[15:8]` 的位值和宽度 | 越界或 MSB/LSB 顺序错误 |
+| `index` | `VALUE BIT` | state/JSON | `/home/host/kverif/tools/kbit index "8'h80" 7 --json` | 单 bit 结果 | bit 越界 |
+| `concat` | 一个或多个 `VALUE` | state/JSON | `/home/host/kverif/tools/kbit concat "4'ha" "4'h5" --json` | 按 argv 顺序拼接的结果 | 无输入或任一 literal 非法 |
+| `repeat` | `COUNT VALUE` | state/JSON | `/home/host/kverif/tools/kbit repeat 4 "2'b10" --json` | 重复拼接值和总位宽 | COUNT/总宽度非法 |
+| `trunc` | `VALUE --to N` | state/JSON | `/home/host/kverif/tools/kbit trunc "16'h12ff" --to 8 --json` | 低 N bit | 目标宽度非法 |
+| `zext` | `VALUE --to N` | state/JSON | `/home/host/kverif/tools/kbit zext "8'h80" --to 16 --json` | 零扩展结果 | 目标小于输入等宽度错误 |
+| `sext` | `VALUE --to N` | state/JSON | `/home/host/kverif/tools/kbit sext "8'sh80" --to 16 --json` | 符号扩展结果 | 目标宽度非法或输入符号解释不符 |
+| `reverse` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit reverse "8'b1000_0001" --json` | bit 顺序反转结果 | literal 非法 |
+| `mask` | `--width N` | `--lsb B` 默认 `0` | `/home/host/kverif/tools/kbit mask --width 13 --lsb 4 --json` | 从 B 起连续 N 位的 mask | width/lsb 为负或超出实现限制 |
+| `align` | `VALUE --to N` | state/JSON | `/home/host/kverif/tools/kbit align "13'd17" --to 8 --json` | 按 N 对齐的结果 | N 非正整数 |
+| `popcount` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit popcount "32'hdead_beef" --json` | 置位计数 | 4-state 未知位无法确定时失败 |
+| `onehot` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit onehot "8'h20" --json` | `result.bool=true/false` | 未知位导致结论不确定 |
+| `onehot0` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit onehot0 "8'h00" --json` | 最多一位为 1 的布尔结论 | 未知位导致结论不确定 |
+| `gray2bin` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit gray2bin "4'b1110" --json` | Gray 转 binary | 未知位/宽度非法 |
+| `bin2gray` | `VALUE` | state/JSON | `/home/host/kverif/tools/kbit bin2gray "4'b1011" --json` | binary 转 Gray | literal 非法 |
+| `check` | `--expr EXPR`；并提供 `--var` 或 `--values` | state/JSON；`--var` 可重复 | `/home/host/kverif/tools/kbit check --expr "valid && ready && data[15:8] == 8'hbe" --var "valid=1'b1" --var "ready=1'b1" --var "data=32'hdead_beef" --json` | `matched`、`evaluated`、`result.bool` | 表达式/变量/values 文件非法 |
+| `agent serve` | `--stdio` | 无 | `/home/host/kverif/tools/kbit agent serve --stdio` | 一行请求/一行响应协议 | 普通脚本不需要；协议 stdout 不能混日志 |
 
 每个子命令的例子：
 
@@ -1288,20 +1380,26 @@ KBIT=/home/host/kverif/tools/kbit
 
 `kentry` 将一个逻辑 entry 的多拍 fragments 按配置拼接，再输出字段切片。它适合 cache/TLB/queue entry、分拍总线 payload 和压缩 metadata 的回归分析。
 
-| 文件/字段 | 含义 |
-| --- | --- |
-| config `name/version/total_bits` | entry 标识、配置版本和总位数 |
-| config `fragment_byte_order` | fragment 拼接字节顺序，例如 `msb_first` |
-| config `bit_numbering` | 字段 bit 编号规则，例如 `byte_lsb0` |
-| config `fields[].name/bits` | 字段名和 `[msb:lsb]` 范围 |
-| fragment `seq/data` | 分拍顺序和 SV/hex 数据 |
-| fragment `valid_lsb/valid_width` | 该 fragment 中有效 bit 范围 |
+| 文件/字段 | 类型和必需性 | 示例值 | 含义 | 校验规则 |
+| --- | --- | --- | --- | --- |
+| config `name` | 非空字符串；必需 | `l2_mshr_entry` | entry 标识 | 只用于标识，不代替字段名 |
+| config `version` | 整数；必需 | `1` | 配置版本 | 调用方应把版本与解码产物一起归档 |
+| config `total_bits` | 正整数；必需 | `128` | entry 拼接后的总位数 | fields 和 fragments 不能越界 |
+| config `fragment_byte_order` | 枚举；必需 | `msb_first` | fragment 拼接字节顺序 | 不支持值返回配置错误 |
+| config `bit_numbering` | 枚举；必需 | `byte_lsb0` | 字段 bit 编号规则 | 必须与采集端定义一致 |
+| config `fields[].name` | 非空字符串；每项必需 | `tag` | 输出字段名 | 字段名应唯一 |
+| config `fields[].bits` | `[msb:lsb]` 字符串；每项必需 | `[127:84]` | 字段闭区间 | 越界/反向时失败；字段重叠返回 `FIELD_OVERLAP` warning |
+| fragment `seq` | 整数；每拍必需 | `0` | 分拍排序键 | 重复序号报错；序号可不连续，按数值排序 |
+| fragment `data` | 偶数位十六进制 byte 字符串；每拍必需 | `0x1234` | 本拍数据 | 允许 `0x`、下划线和空格；不接受 SV `'h` literal |
+| fragment `valid_lsb` | 非负整数；必需 | `0` | 本拍有效区间最低 bit | 必须落在 data 位宽内 |
+| fragment `valid_width` | 正整数；必需 | `16` | 本拍有效 bit 数 | `valid_lsb + valid_width` 不能越界 |
 
-| 子命令 | 参数 | 功能 |
-| --- | --- | --- |
-| `decode` | `--config FILE --input FILE` | 加载 YAML/JSON config 和 JSONL fragments，拼接并解码字段 |
-| `explain` | `--config FILE` | 输出字段布局、范围和解释，不需要 fragments |
-| `validate` | `--config FILE [--input FILE]` | 校验 config，并可同时校验 fragments |
+| 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要 JSON 结果 | 常见失败 |
+| --- | --- | --- | --- | --- | --- |
+| `decode` | `--config FILE --input FILE` | `--json`；`--pretty` 默认 false | `/home/host/kverif/tools/kentry decode --config /data/project/entry.yaml --input /data/run/entry-fragments.jsonl --json --pretty` | raw entry、总位宽、各字段值和 warnings | 配置/fragment 结构、位宽、顺序或字段范围非法 |
+| `explain` | `--config FILE` | `--json`；`--pretty` | `/home/host/kverif/tools/kentry explain --config /data/project/entry.yaml --json --pretty` | 字段布局、范围和说明，不读取 fragments | config 字段缺失或不支持 |
+| `validate` | `--config FILE` | `--input FILE` 可选；`--json`；`--pretty` | `/home/host/kverif/tools/kentry validate --config /data/project/entry.yaml --input /data/run/entry-fragments.jsonl --json` | `ok`、配置/fragment diagnostics | 任一合同错误时 `ok=false`、进程非零 |
+| 原始 JSON request | request 文件或 stdin `-` | `--json`；pretty 可在 request.output 中设置 | `/home/host/kverif/tools/kentry --json /data/run/kentry.decode.request.json` | 与参数式 decode/explain/validate 同合同 | `api_version` 必须是 `kentry.v1`；JSON 必须为 object |
 
 三个子命令都支持 `--json` 和 `--pretty`。还可以把原始 JSON request 文件作为唯一位置参数，或用 `-` 从 stdin 读取。
 
@@ -1327,12 +1425,19 @@ KENTRY=/home/host/kverif/tools/kentry
 
 `kloc` 消费仿真阶段生成的 sidecar JSONL map，把短 `L_XXXXXXXX` 位置 ID 映射回源文件和行号。它避免在大日志中重复打印长路径，同时保留脚本可定位性。
 
-| 子命令 | 参数 | 功能 |
-| --- | --- | --- |
-| `resolve LOC_ID` | 必需 `--map FILE`；可选 `--json` | 返回一个位置 ID 的文件和行号 |
-| `context LOC_ID` | `--map FILE`；`--before N`、`--after N` 默认各 `20`；可选 `--json` | 返回目标行前后源码 |
-| `stats LOG` | 可选 `--map FILE`、`--top N`，N 默认 `20`；可选 `--json` | 统计日志中位置 ID 频率并可补全源码信息 |
-| `annotate LOG` | 可选 `--map FILE` | 在人类可读日志中插入位置提示；当前不提供 JSON 输出 |
+| 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要结果 | 常见失败/注意事项 |
+| --- | --- | --- | --- | --- | --- |
+| `resolve` | `LOC_ID --map FILE` | `--json`；默认人类文本 | `/home/host/kverif/tools/kloc resolve L_00000001 --map /data/run/sim.log.kloc.jsonl --json` | `loc_id/file/line` 和可选元数据 | ID 不存在时 `LOC_ID_NOT_FOUND`、`ok=false`、退出 `1` |
+| `context` | `LOC_ID --map FILE` | `--before N` 默认 `20`；`--after N` 默认 `20`；`--json` | `/home/host/kverif/tools/kloc context L_00000001 --map /data/run/sim.log.kloc.jsonl --before 8 --after 12 --json` | resolve 结果、目标行和源码窗口 | 源文件丢失时可能返回 `SOURCE_NOT_FOUND` warning |
+| `stats` | `LOG` | `--map FILE` 可选；`--top N` 默认 `20`；`--json` | `/home/host/kverif/tools/kloc stats /data/run/sim.log --map /data/run/sim.log.kloc.jsonl --top 30 --json` | ID 频率、top 排名和可选源码信息 | 日志只识别 `L_[0-9A-F]{8}` 格式 |
+| `annotate` | `LOG` | `--map FILE` 可选 | `/home/host/kverif/tools/kloc annotate /data/run/sim.log --map /data/run/sim.log.kloc.jsonl` | stdout 人类日志，每个 ID 附位置提示 | 当前无 JSON；重定向到新文件，不要覆盖输入日志 |
+
+| sidecar JSONL 字段 | 必需性 | 示例 | 用途 |
+| --- | --- | --- | --- |
+| `loc_id` | 必需 | `L_00000001` | 日志中的稳定短 ID |
+| `file` | 必需 | `/data/project/dv/scoreboard.sv` | 可定位源码绝对路径 |
+| `line` | 必需 | `127` | 1-based 源码行号 |
+| `msg_id` 等附加字段 | 可选 | `SB_MISMATCH` | 供项目脚本分类、聚合或生成新结论 |
 
 ```bash
 KLOC=/home/host/kverif/tools/kloc
@@ -1351,13 +1456,22 @@ map 每行应至少能提供 `loc_id`、`file` 和 `line`，并可包含 `msg_id
 
 `ksva` 对 assertion/property 做确定性解析和 lowering。它不启动仿真，适合 review gate、断言迁移、自动文档和二次开发脚本中的语义预处理。
 
-| 子命令 | 参数 | 功能 |
+| 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 输出 | 失败判定 |
+| --- | --- | --- | --- | --- | --- |
+| `list` | `--file FILE` | 无；人类文本 | `/home/host/kverif/tools/ksva list --file /data/project/assertions/protocol.sv` | property/assertion 名称列表 | 文件不存在/不可读返回退出 `4`；解析失败返回 `1` |
+| `scan` | `--file FILE` | 无；人类文本 | `/home/host/kverif/tools/ksva scan --file /data/project/assertions/protocol.sv` | temporal、local variable 等语法构造分布 | 文件或解析错误非零退出 |
+| `lint` | `--file FILE` | `--property NAME` 可选，默认检查全部 | `/home/host/kverif/tools/ksva lint --file /data/project/assertions/protocol.sv --property p_req_eventually_grant` | diagnostics 文本 | property 不存在退出 `3`；解析错误退出 `1` |
+| `explain` | `--file FILE --property NAME` | `--json`、`--markdown`；`--strict` 默认 false | `/home/host/kverif/tools/ksva explain --file /data/project/assertions/protocol.sv --property p_req_eventually_grant --json --strict` | 自然语言、Markdown 或结构化解释 | strict 遇 unsupported 退出 `2` |
+| `parse` | `--file FILE --property NAME --emit LEVEL` | LEVEL 仅 `surface-ir/sequence-ir/timeline-ir` | `/home/host/kverif/tools/ksva parse --file /data/project/assertions/protocol.sv --property p_req_eventually_grant --emit timeline-ir` | 对应 lowering 层级的 JSON IR | 不支持的 `--emit` 由 argparse 拒绝；内部错误退出 `5` |
+
+| ksva 退出码 | 含义 | 二次开发处理建议 |
 | --- | --- | --- |
-| `list` | `--file FILE` | 列出文件中的 property/assertion |
-| `scan` | `--file FILE` | 统计 temporal、local variable 等语法构造分布 |
-| `lint` | `--file FILE [--property NAME]` | 检查全部或指定 property 的静态规则 |
-| `explain` | `--file FILE --property NAME`；可选 `--json`、`--markdown`、`--strict` | 输出自然语言、Markdown 或结构化解释；strict 遇到 unsupported 即失败 |
-| `parse` | `--file FILE --property NAME --emit LEVEL` | 输出 `surface-ir`、`sequence-ir` 或 `timeline-ir` JSON |
+| `0` | 成功 | 消费输出并继续 |
+| `1` | parse error | 归为 SVA 语法/解析失败，保存原文件和 stderr |
+| `2` | strict unsupported | 语法可被识别但当前 lowering 不完整，不要把结果当精确 IR |
+| `3` | property not found | 检查 property 名称或预处理条件 |
+| `4` | file error | 检查路径、权限和编码 |
+| `5` | internal error | 归为工具问题，保留 traceback/stderr |
 
 ```bash
 KSVA=/home/host/kverif/tools/ksva
@@ -1389,22 +1503,22 @@ SVA=/data/project/assertions/protocol.sv
 
 `kberif` 以当前工作目录作为项目根目录，维护验证环境的 kind、manifest、cards、details 和短上下文。它适合把项目约定、模块知识和 debug/runbook 信息提供给外部自动化。普通查询可用全局 `--json`，且必须放在子命令前，例如 `kberif --json status`。
 
-| 子命令 | 参数 | 功能 |
-| --- | --- | --- |
-| `config init` | `--kind KIND`；可选 `--force`、`--merge`、`--dry-run`、`--output DIR` | 创建或合并环境模板；`--output` 指定目标根目录 |
-| `init` | `--model MODEL` | 调用配置的 Agent 生成初始 cards/details |
-| `validate` | 可选 `--all` | 校验当前项目状态和产物；`--all` 为兼容参数 |
-| `status` | 无 | 返回 kind、manifest、card/detail 状态 |
-| `repair-catalog` | 无 | 根据磁盘产物修复 card catalog |
-| `list-topics` | 无 | 列出可查询 topic |
-| `get TOPIC` | 可选 `--detail` | 读取 topic card；`--detail` 直接输出 detail 文本 |
-| `detail TOPIC` | 无 | 读取 detail Markdown |
-| `detail upsert TOPIC` | 必需 `--stdin` | 从 stdin 写入 detail 文本 |
-| `brief` | `--mode MODE` | 生成指定 view 的短 context，例如 `debug` |
-| `card upsert` | 必需 `--stdin` | 从 stdin JSON object 创建或更新 card |
-| `card append-key-items CARD_ID` | 必需 `--stdin` | 从 stdin JSON list 追加 key items |
-| `agent serve` | 必需 `--stdio`；可选 `--write` | 启动 JSON stdio agent；默认只读，`--write` 开启写操作 |
-| `bt/it/st/soc TOPIC` | topic 名 | 在对应 namespace 下快速读取 topic |
+| 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 输出/副作用 | 常见失败/注意事项 |
+| --- | --- | --- | --- | --- | --- |
+| `config init` | `--kind bt/it/st/soc` | `--output DIR` 默认 cwd；`--dry-run`；`--force/--merge` 默认 false | `/home/host/kverif/tools/kberif config init --kind bt --dry-run --output /data/project/verification` | 列出将创建/更新的模板文件 | 已存在时必须明确 `--force` 或 `--merge`；二者语义不同 |
+| `init` | `--model MODEL` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif init --model qwen3.6-35b` | 调用站点 Agent 生成 manifest/cards/details | 需要运行时模型环境；凭据不得写入命令、文件或报告 |
+| `validate` | 无 | `--all` 为兼容 flag，无额外行为 | `cd /data/project/verification && /home/host/kverif/tools/kberif validate --all` | 成功打印 `ok`；失败逐项打印 error | 任一 schema/evidence/detail 错误退出 `1` |
+| `status` | 无 | 全局 `--json` 默认 false | `cd /data/project/verification && /home/host/kverif/tools/kberif --json status` | kind、manifest、card/detail 状态 | 缺配置/manifest 时退出 `1` |
+| `repair-catalog` | 无 | 全局 `--json` | `cd /data/project/verification && /home/host/kverif/tools/kberif --json repair-catalog` | 按磁盘产物重建 catalog，返回 card 数 | 属于写操作；完成后再次 `validate` |
+| `list-topics` | 无 | 全局 `--json` | `cd /data/project/verification && /home/host/kverif/tools/kberif --json list-topics` | 当前 kind 可查询 topic 列表 | kind/config 不一致时退出 `1` |
+| `get TOPIC` | `TOPIC` | `--detail` 默认 false；普通 card 查询可用全局 `--json` | `cd /data/project/verification && /home/host/kverif/tools/kberif --json get backpressure` | card JSON/kout；`--detail` 直接输出 detail 文本 | topic 不存在时 `TOPIC_NOT_FOUND`（CLI 打印 message，退出 `1`） |
+| `detail TOPIC` | `TOPIC` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif detail backpressure` | detail Markdown 原文 | detail 缺失时退出 `1` |
+| `detail upsert TOPIC` | `TOPIC --stdin` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif detail upsert backpressure --stdin < /data/context/backpressure.md` | 校验后写入 detail | 只支持 stdin；frontmatter/章节/card 不匹配时拒绝 |
+| `brief` | `--mode MODE` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif brief --mode debug` | 输出指定 view 的短 Markdown context | view 与当前 kind 不匹配时退出 `1` |
+| `card upsert` | `--stdin` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif card upsert --stdin < /data/context/backpressure.card.json` | 校验后创建/更新一个 card | stdin 必须是 `kberif.topic_card.v1` JSON object |
+| `card append-key-items CARD_ID` | `CARD_ID --stdin` | 无 | `cd /data/project/verification && /home/host/kverif/tools/kberif card append-key-items bt.backpressure --stdin < /data/context/backpressure.items.json` | 向已有 card 追加 key items | stdin 必须是 JSON array；evidence 路径必须在 manifest 中 |
+| `agent serve` | `--stdio` | `--write` 默认 false | `cd /data/project/verification && /home/host/kverif/tools/kberif agent serve --stdio` | 启动 JSON stdio agent；默认只读 | 开启 `--write` 前要限制调用方；协议 stdout 不能混日志 |
+| `bt/it/st/soc TOPIC` | namespace 对应的 `TOPIC` | 查询可用全局 `--json` | `cd /data/project/verification && /home/host/kverif/tools/kberif --json bt scoreboard` | 快捷读取对应 namespace topic | namespace 与环境 kind 不匹配时 `KIND_MISMATCH` |
 
 ```bash
 KBERIF=/home/host/kverif/tools/kberif
@@ -1449,17 +1563,19 @@ cd /data/project/verification
 
 全局 `--config FILE` 必须放在子命令前；不传时从环境和当前目录查找默认配置。
 
-| 子命令/参数 | 功能 |
-| --- | --- |
-| `init [--refresh]` | 捕获 EDA 环境快照；`--refresh` 强制重建 |
-| `env-info` | 查看快照路径、状态和元数据 |
-| `list-actions` | 列出 allowlist action |
-| `describe-action --action NAME` | 查看 action 允许的 target、option 和命令模板 |
-| `run --action NAME` | 选择 action |
-| `run --target VALUE` | 选择该 action 的 target |
-| `run --option KEY=VALUE` | 传入 allowlist option，可重复 |
-| `run --dry-run` | 完成解析和校验，只打印最终 argv，不执行 |
-| `run --quiet` | 抑制 runner header；被执行命令输出不受影响 |
+| 子命令/参数 | 类型、必需性与默认值 | 可重复 | 可直接运行的绝对路径例子 | 输出/退出码 | 校验和注意事项 |
+| --- | --- | --- | --- | --- | --- |
+| `--config FILE` | 全局文件路径；可选；默认由环境/当前目录发现 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml list-actions` | 所有子命令共用配置 | 必须放在子命令前；找不到/解析失败返回 `2` |
+| `init` | 子命令；无必需参数 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml init` | 捕获并缓存 EDA 环境快照 | 首次部署和环境更新后执行 |
+| `init --refresh` | flag；默认 false | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml init --refresh` | 强制重建快照 | 运行中 job 不应依赖正在被替换的快照 |
+| `env-info` | 子命令；无参数 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml env-info` | 快照路径、状态和元数据 | 用于 CI 启动前诊断 |
+| `list-actions` | 子命令；无参数 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml list-actions` | allowlist action 列表 | 只列配置允许项，不扫描任意系统命令 |
+| `describe-action` | `--action NAME` 必需 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml describe-action --action sim` | target、option 和命令模板 | action 不存在返回 `2` |
+| `run --action NAME` | 字符串；必需 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --dry-run` | 选择 allowlist action | 不接受配置外 action |
+| `run --target VALUE` | 字符串；action 决定是否必需 | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target compile --dry-run` | 选择 action target | 不接受 action 未声明 target |
+| `run --option KEY=VALUE` | 键值；action 决定是否必需 | 是 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target regression --option TEST=smoke_test --option SEED=123 --dry-run` | 参数经 allowlist 映射为最终 argv | 未声明 option、类型/枚举错误或缺 `=` 时返回 `2` |
+| `run --dry-run` | flag；默认 false | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target compile --option TEST=smoke --dry-run` | 打印最终 argv，不启动 EDA | 正式运行前建议先执行一次 |
+| `run --quiet` | flag；默认 false | 否 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target regression --option TEST=smoke --quiet` | 仅抑制 runner header | 被执行命令 stdout/stderr 不受影响；最终退出码透传 |
 
 ```bash
 KEDA_RUNNER=/home/host/kverif/tools/keda-runner
@@ -1488,31 +1604,31 @@ CONFIG=/data/project/.keda-runner.yaml
 
 Server 参数：
 
-| 参数 | 功能 |
-| --- | --- |
-| `--socket PATH` | Unix domain socket 路径 |
-| `--backend direct/lsf` | 在本机直接运行，或通过 LSF 启动后端 |
+| 参数 | 类型、必需性与默认值 | 可直接运行的绝对路径例子 | 功能和注意事项 |
+| --- | --- | --- | --- |
+| `--socket PATH` | 文件路径；可选；默认 `KVERIF_LOOP_SOCKET` 或 `/tmp/kverif-loop-<uid>.sock` | `/home/host/kverif/tools/kverif-loop-server --socket /tmp/kverif-loop-host.sock --backend direct` | Unix domain socket；server/client 必须使用同一路径，退出后清理残留 socket |
+| `--backend direct/lsf` | 枚举；可选；默认读取 `KVERIF_LOOP_BACKEND`/站点配置 | `/home/host/kverif/tools/kverif-loop-server --socket /tmp/kverif-loop-host.sock --backend lsf` | `direct` 本机启动后端；`lsf` 通过调度系统启动 |
 
 Client 全局参数必须放在子命令前：
 
-| 参数 | 功能 |
-| --- | --- |
-| `--socket PATH` | server socket |
-| `--timeout-sec SEC` | client socket 期限；`0` 或负数表示无限等待 |
-| `--pretty` | pretty-print client JSON response |
-| `--json OBJECT` | 直接发送一条 JSON-RPC object，和参数式子命令互为替代入口 |
+| 参数 | 类型、必需性与默认值 | 可重复 | 完整例子 | 功能和注意事项 |
+| --- | --- | --- | --- | --- |
+| `--socket PATH` | 文件路径；可选；默认同 server 规则 | 否 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock ping` | 必须放在参数式子命令前 |
+| `--timeout-sec SEC` | 浮点秒；可选；cov 方法默认无限，其他默认 `30`；`0`/负数禁用 | 否 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock --timeout-sec 0 cov-query --session cov0 --action cov.summary --output-format json` | 这是 client socket 等待期限，不改变 backend action 自身合同 |
+| `--pretty` | flag；默认 false | 否 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock --pretty ping` | 只改变 client JSON 缩进 |
+| `--json OBJECT` | JSON object 字符串；raw 模式必需入口之一 | 否 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock --json '{"id":"health-1","method":"server.ping","params":{}}'` | 与参数式子命令互斥；shell 中整体使用单引号 |
 
-| Client 子命令 | 参数 | 功能 |
-| --- | --- | --- |
-| `ping` | 无 | 检查 server 存活 |
-| `debug-open` | `--name`；可选 `--fsdb`、`--daidir`、`--queue`、`--resource` | 打开 debug loop session |
-| `debug-list` | 无 | 列出 debug session |
-| `debug-query` | `--session --action`；可重复 `--arg`、`--limit`、`--output`；可选 `--output-format kout/json/envelope` | 转发 kdebug action |
-| `debug-close` | `--session/--session-id/--name` | 关闭 debug session |
-| `cov-open` | `--name --vdb`；可选 `--queue`、`--resource` | 打开 coverage loop session |
-| `cov-list` | 无 | 列出 coverage session |
-| `cov-query` | `--session --action`；查询参数同 debug-query | 转发 kcov action |
-| `cov-close` | `--session/--session-id/--name` | 关闭 coverage session |
+| Client 子命令 | 必需参数 | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要结果/错误 |
+| --- | --- | --- | --- | --- |
+| `ping` | 无 | client 全局参数 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock ping` | `result.pong=true` 和 backend mode；连接失败时非零 |
+| `debug-open` | `--name ID` | `--fsdb`、`--daidir`；LSF 可用 `--queue/--resource` | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock debug-open --name wave0 --fsdb /data/run/waves.fsdb --daidir /data/build/simv.daidir` | 返回 debug session；至少应提供 FSDB/daidir 之一 |
+| `debug-list` | 无 | client 全局参数 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock debug-list` | 返回当前 loop server 管理的 debug sessions |
+| `debug-query` | `--session ID --action NAME` | `--arg/--limit/--output KEY=VALUE` 可重复；`--output-format kout` 默认 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock debug-query --session wave0 --action value.at --arg signal=tb_top.clk --arg time=100ns --output-format json` | 转发 kdebug action；检查 client 顶层 `ok` 和内层结果 |
+| `debug-close` | `--session/--session-id/--name ID` | 无 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock debug-close --session wave0` | 关闭并释放 debug backend |
+| `cov-open` | `--name ID --vdb DIR` | LSF 可用 `--queue/--resource` | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock cov-open --name cov0 --vdb /data/run/simv.vdb` | 返回 coverage session；VDB 加载失败时结构化 error |
+| `cov-list` | 无 | client 全局参数 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock cov-list` | 返回 coverage sessions |
+| `cov-query` | `--session ID --action NAME` | query 参数同 debug；coverage 建议 `--timeout-sec 0` | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock --timeout-sec 0 cov-query --session cov0 --action cov.holes --arg 'metrics=["line","toggle"]' --limit max_items=20 --output-format json` | 转发 kcov action；不要用短 client timeout 截断真实大 VDB 查询 |
+| `cov-close` | `--session/--session-id/--name ID` | 无 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock cov-close --session cov0` | 关闭 coverage backend；脚本 finally/trap 必须执行 |
 
 ```bash
 LOOP_SERVER=/home/host/kverif/tools/kverif-loop-server
@@ -1557,16 +1673,20 @@ trap - EXIT INT TERM
 
 `kverif-mcp` 没有业务子命令，启动后通过 stdin/stdout 运行 MCP transport。主要配置来自环境变量：
 
-| 环境变量 | 功能 |
-| --- | --- |
-| `KVERIF_MCP_BACKEND=direct/lsf` | 选择本机或 LSF backend |
-| `KVERIF_MCP_TIMEOUT_SEC` | stateless one-shot 请求期限 |
-| `KVERIF_MCP_STARTUP_TIMEOUT_SEC` | stateful session 启动期限 |
-| `KVERIF_MCP_REQUEST_TIMEOUT_SEC` | stateful query 期限 |
-| `KVERIF_MCP_CLOSE_TIMEOUT_SEC` | session close 期限 |
-| `KVERIF_MCP_LOG_DIR` | MCP 结构化日志目录 |
-| `KVERIF_MCP_ENABLE_DEBUG/COV/BIT/ENTRY/LOC/CONTEXT/SVA` | 按工具组控制是否暴露，`1` 开启、`0` 关闭 |
-| `KVERIF_MCP_ENABLE_CONTEXT_WRITE=1` | 暴露 kberif context 写操作，默认关闭 |
+| 环境变量 | 类型和默认值 | 示例 | 功能和注意事项 |
+| --- | --- | --- | --- |
+| `KVERIF_MCP_BACKEND` | `direct/lsf`；默认 `direct` | `KVERIF_MCP_BACKEND=lsf` | 选择本机或 LSF backend |
+| `KVERIF_MCP_TIMEOUT_SEC` | 浮点秒；默认 `360` | `KVERIF_MCP_TIMEOUT_SEC=900` | stateless one-shot 请求期限 |
+| `KVERIF_MCP_STARTUP_TIMEOUT_SEC` | 浮点秒；默认 `180` | `KVERIF_MCP_STARTUP_TIMEOUT_SEC=300` | kdebug 等 stateful session 启动期限 |
+| `KVERIF_MCP_REQUEST_TIMEOUT_SEC` | 浮点秒；默认 `360` | `KVERIF_MCP_REQUEST_TIMEOUT_SEC=900` | kdebug stateful query 期限 |
+| `KVERIF_KCOV_STARTUP_TIMEOUT_SEC` | 浮点秒；默认 `0` | `KVERIF_KCOV_STARTUP_TIMEOUT_SEC=0` | kcov session-open；`0` 禁用期限，适合大 VDB |
+| `KVERIF_KCOV_REQUEST_TIMEOUT_SEC` | 浮点秒；默认 `0` | `KVERIF_KCOV_REQUEST_TIMEOUT_SEC=0` | kcov query；`0` 禁用期限，不人为截断 coverage |
+| `KVERIF_MCP_CLOSE_TIMEOUT_SEC` | 浮点秒；默认 `30` | `KVERIF_MCP_CLOSE_TIMEOUT_SEC=60` | session close 期限 |
+| `KVERIF_MCP_BKILL_TIMEOUT_SEC` | 浮点秒；默认 `30` | `KVERIF_MCP_BKILL_TIMEOUT_SEC=60` | LSF 异常回收等待期限 |
+| `KVERIF_MCP_LOG_DIR` | 目录路径；有站点默认 | `/home/host/.kverif/mcp` | MCP 结构化日志目录；目录必须仅当前用户可写 |
+| `KVERIF_MCP_ENABLE_DEBUG/COV/BIT/ENTRY/LOC/CONTEXT/SVA` | 布尔 `1/0`；默认 `1` | `KVERIF_MCP_ENABLE_COV=0` | 按工具组控制是否暴露 |
+| `KVERIF_MCP_ENABLE_CONTEXT_WRITE` | 布尔；默认 `0` | `KVERIF_MCP_ENABLE_CONTEXT_WRITE=1` | 允许暴露 context 写工具；仍需总写开关 |
+| `KVERIF_MCP_ENABLE_WRITE` | 布尔；默认 `0` | `KVERIF_MCP_ENABLE_WRITE=1` | MCP 总写开关；只有它与具体 write policy 都允许时才写入 |
 
 ```bash
 export PYTHON=/home/host/kverif/.venv38/bin/python
@@ -1575,7 +1695,12 @@ export KVERIF_MCP_LOG_DIR=/home/host/.kverif/mcp
 /home/host/kverif/tools/kverif-mcp
 ```
 
-`kverif-lsf-doctor` 检查 Python/MCP 依赖、kdebug 路径、stdio-loop ready、`actions` 请求和 clean quit。命令只提供一个可选参数 `--fake`；真实 direct/LSF 模式由 `KVERIF_MCP_BACKEND` 决定。
+`kverif-lsf-doctor` 检查 Python/MCP 依赖、kdebug 路径、stdio-loop ready、`actions` 请求和 clean quit。命令参数如下；真实 direct/LSF 模式由 `KVERIF_MCP_BACKEND` 决定。
+
+| 命令/参数 | 必需性和默认值 | 可直接运行的绝对路径例子 | 判定方式 |
+| --- | --- | --- | --- |
+| `kverif-lsf-doctor` | 无必需参数 | `PYTHON=/home/host/kverif/.venv38/bin/python KVERIF_MCP_BACKEND=direct /home/host/kverif/tools/kverif-lsf-doctor` | 全部诊断通过退出 `0`；任一依赖/协议失败非零 |
+| `--fake` | flag；默认 false | `PYTHON=/home/host/kverif/.venv38/bin/python KVERIF_MCP_FAKE_LSF=1 /home/host/kverif/tools/kverif-lsf-doctor --fake` | 不提交真实 LSF job，只检查 fake LSF 协议路径 |
 
 ```bash
 # direct backend 诊断
@@ -1607,6 +1732,45 @@ KVERIF_MCP_FAKE_LSF=1 \
 ```
 
 对于没有运行时 schema 的工具，以 `<absolute-tool-path> --help`、本章和各工具 README 为准。脚本应固定 kverif Git commit 或发布版本，并把版本标识、完整 argv、response、stderr 和 EDA 数据库标识一起归档。
+
+### 10.13 输出、错误码和排障速查
+
+| 工具 | 成功时机器合同 | 失败时机器合同 | 退出码用法 | 二次开发最低检查项 |
+| --- | --- | --- | --- | --- |
+| `kdebug` | `ok=true`，并有 `action/data/summary/warnings` 中的适用字段 | `ok=false`，`error.code/error.message`，可能有 detail | 成功 `0`，请求/backend 失败非零 | 进程 rc、JSON 可解析、`ok`、`truncated`、warnings |
+| `kcov` | `ok=true`，含 action/summary/data；导出含 artifact 元数据 | `ok=false` 和结构化 `error` | 成功 `0`，失败非零 | 再检查 VDB/test/metric、overflow 和 artifact 是否存在 |
+| `kbit` | `schema=kbit.result.v1`、`ok=true`、`result` | `schema=kbit.error.v1`、`ok=false`、`error` | 成功 `0`，失败 `1` | `result.width/known/bool` 是否满足项目门禁 |
+| `kentry` | `ok=true`，action-specific decode/explain/validate 数据 | `ok=false`、`error.code/message/details` | 成功 `0`，失败 `1` | warnings、字段范围、fragment 数和配置版本 |
+| `kloc` | `resolve/context/stats --json` 返回 `ok=true` 数据 | resolve/context 可返回 `ok=false` error；部分命令为文本 | 按子命令检查 | 不要假定 annotate 是 JSON；检查 `SOURCE_NOT_FOUND` warning |
+| `ksva` | explain JSON 或 parse JSON IR；其他命令为文本 | stderr/diagnostic 和专用退出码 | `0..5` 见 10.7 | property 名、lowering status、strict 退出码 |
+| `kberif` | 查询命令可用全局 `--json`；detail/brief 为 Markdown | 当前 CLI 失败打印 `error: <message>`，不保证 JSON error | 成功 `0`，失败 `1`/Typer 参数码 | 先检查 rc；写后必须执行 `validate` |
+| `keda-runner` | header、最终 argv、被执行命令 stdout/stderr | runner error 写 stderr | runner 配置错误常为 `2`；真实 run 透传子进程 rc | dry-run argv、真实 rc、日志路径 |
+| loop client | 顶层 `id/ok/result` | 顶层 `id/ok=false/error` | 连接/协议失败非零 | 同时检查 client 顶层和内层工具 response |
+
+| 错误/状态 | 常见工具 | 实际含义 | 自动化处理建议 | 不应采取的做法 |
+| --- | --- | --- | --- | --- |
+| `INVALID_CLI`、`INVALID_JSON`、`INVALID_REQUEST`、`SCHEMA_INVALID`、`ACTION_SCHEMA_NOT_FOUND` | kdebug/kcov/kentry | argv、JSON 或 action 合同不合法 | 视为调用脚本缺陷；归档 request 并对照 runtime schema 修复 | 重试同一错误请求 |
+| `ACTION_NOT_FOUND` | kdebug/kcov | 当前版本没有该 action | 运行 `actions` 和 `schema`，检查部署版本 | 猜测 action 名或改内部 dispatcher |
+| `FSDB_OPEN_FAILED`、`VDB_OPEN_FAILED`、`VCS_DB_OPEN_FAILED`、`CRDB_OPEN_FAILED` | kdebug/kcov | EDA 数据库不存在、不匹配、格式/权限错误 | 检查绝对路径、owner、生成版本、构建日志和数据库指纹 | 用 JSON、空目录或别的数据库类型代替 |
+| `KDB_REQUIRED`、`SESSION_REQUIRED`、`SESSION_NOT_FOUND` | kdebug/kcov | 缺少设计资源或 session 生命周期错误 | 补 `--daidir`/`--session`；检查 open response、doctor 和 finally close | 继续用已关闭 session ID |
+| `NETLIST_OBJECT_NOT_FOUND`、`POWER_OBJECT_NOT_FOUND`、`CRDB_OBJECT_NOT_FOUND`、`OBJECT_NOT_FOUND`、`LOC_ID_NOT_FOUND` | 多工具 | 数据库打开成功，但对象名不在当前数据库 | 先列 scope/object，确认完整层次和当前 build | 把对象未找到改写成工具崩溃 |
+| `VERDI_NOT_FOUND`、`VERDI_EXEC_FAILED`、`LICENSE_UNAVAILABLE` | kdebug/kcov | EDA 安装、PATH 或 license 基础设施问题 | 检查 `VERDI_HOME/PATH` 和站点 license；基础设施恢复后重试 | 写入或打印 license 内容；伪装为业务 fail |
+| `TCL_NPI_TIMEOUT`、client socket timeout | kdebug/kcov/loop | backend action 或调用方等待期限到达 | 先区分 backend 与 client；大 VDB 使用 kcov 的 `0` 无期限配置并检查进程活动 | 盲目 kill 后立即并发重启造成资源竞争 |
+| `OUTPUT_EXISTS`、`OUTPUT_PATH_REQUIRED`、`OUTPUT_PATH_UNSAFE`、`OUTPUT_WRITE_FAILED` | NPI writer/kcov export | 覆盖保护、路径策略或写文件失败 | 使用新输出路径；确需覆盖才显式 `overwrite=true`；检查目录权限 | 默认覆盖输入 RTL、已有 FSDB 或报告 |
+| `INVALID_PLAN`、`INVALID_ENUM`、`INVALID_RANGE`、`INVALID_IDENTIFIER` | NPI action | writer/DM/Text 受控计划或枚举非法 | 按 schema 修正数组、enum 和范围 | 传任意 Tcl 或用 shell `eval` 绕过校验 |
+| `PARSE_ERROR`、`FOUR_STATE_LITERAL`、`FOUR_STATE_UNSUPPORTED`、`UNKNOWN_VARIABLE` | kbit | literal/表达式或 2/4-state 假设不成立 | 明确 `--state`，补齐变量，保留未知值语义 | 把 X/Z 强制当 0 |
+| `INVALID_CONFIG`、`UNSUPPORTED_CONFIG_FIELD`、`INVALID_FRAGMENT` | kentry | entry 配置或 JSONL fragment 不满足合同 | 先 `validate`，再 `decode`；修正总位宽、fields、seq 和有效范围 | 忽略 warning/error 继续生成字段结论 |
+| `KIND_MISMATCH`、`TOPIC_NOT_FOUND`、`CARD_SCHEMA_INVALID`、`EVIDENCE_PATH_NOT_IN_MANIFEST`、`VALIDATION_FAILED` | kberif | 项目 kind、topic、card/detail 或 evidence 合同错误 | 在项目根目录修正文件并运行 `validate --all` | 直接编辑 catalog 绕过 evidence 校验 |
+| `truncated=true`、overflow warning、`BATCH_PARTIAL_FAILURE` | kdebug/kcov | 请求完成但数据不完整 | 调整 limit/导出模式，或把“不完整”纳入项目门禁 | 仅看 `ok=true` 就宣称全集分析完成 |
+
+| 排障现象 | 第一条命令 | 第二条命令 | 判定重点 |
+| --- | --- | --- | --- |
+| kdebug action 名或参数不确定 | `/home/host/kverif/tools/kdebug --json actions` | `/home/host/kverif/tools/kdebug --json schema --action signal.scan --kind request` | action 是否存在、required、enum、additionalProperties |
+| session 打不开或查询卡住 | `/home/host/kverif/tools/kdebug --json session-doctor --session debug_104` | `/home/host/kverif/tools/kdebug log tail --session debug_104 --lines 80` | PID、transport、FSDB/KDB 指纹、lifecycle、crash marker |
+| FSDB 信号找不到 | `/home/host/kverif/tools/kdebug --json scope-list --fsdb /data/run/waves.fsdb --path tb_top --max-rows 500` | `/home/host/kverif/tools/kdebug --json value-at --fsdb /data/run/waves.fsdb --signal tb_top.dut.ready --time 100ns` | 完整层次、数组索引、采样时间是否在范围内 |
+| coverage 查询慢或被截断 | `/home/host/kverif/tools/kcov --json metrics --vdb /data/run/simv.vdb` | `/home/host/kverif/tools/kcov --json export-holes --vdb /data/run/simv.vdb --metrics line,toggle --output-mode file --output-path /data/reports/holes.ndjson --artifact-format ndjson --allow-absolute-path` | metric 是否存在、是否应 file 导出、是否错误设置外层 timeout |
+| NPI action 在 VM 不可用 | `/home/host/kverif/tools/kdebug --json action npi.capabilities` | `/home/host/kverif/tools/kdebug --json schema --action netlist.resolve --kind request` | Verdi 2018 command 注册、license、action status 和 schema |
+| loop server 无响应 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock ping` | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock debug-list` | socket 是否一致、server PID、backend session 是否残留 |
 
 ## 11. 接入 LSF、CI 和内部平台
 
