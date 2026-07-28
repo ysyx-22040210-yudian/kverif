@@ -1,0 +1,121 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.objects",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "module": "npi_fixture_top.u_alu",
+    "kind": "io",
+    "count": 3,
+    "returned_count": 3,
+    "truncated": false
+  },
+  "data": {
+    "module": "npi_fixture_top.u_alu",
+    "kind": "io",
+    "count": 3,
+    "returned_count": 3,
+    "truncated": false,
+    "items": [
+      {
+        "object": {
+          "handle": "339909248",
+          "name": "lhs",
+          "full_name": "npi_fixture_top.u_alu.lhs",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiIODecl",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 12,
+          "def_line": null,
+          "size": null,
+          "direction": "npiInput",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiUndefined",
+          "net_type": "npiUndefined",
+          "local_param": null,
+          "signed": null,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": ""
+        }
+      },
+      {
+        "object": {
+          "handle": "339909304",
+          "name": "rhs",
+          "full_name": "npi_fixture_top.u_alu.rhs",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiIODecl",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 13,
+          "def_line": null,
+          "size": null,
+          "direction": "npiInput",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiUndefined",
+          "net_type": "npiUndefined",
+          "local_param": null,
+          "signed": null,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": ""
+        }
+      },
+      {
+        "object": {
+          "handle": "339909360",
+          "name": "result",
+          "full_name": "npi_fixture_top.u_alu.result",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiIODecl",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 14,
+          "def_line": null,
+          "size": null,
+          "direction": "npiOutput",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiUndefined",
+          "net_type": "npiUndefined",
+          "local_param": null,
+          "signed": null,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": ""
+        }
+      }
+    ],
+    "summary": {
+      "module": "npi_fixture_top.u_alu",
+      "kind": "io",
+      "count": 3,
+      "returned_count": 3,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

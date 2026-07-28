@@ -3,11 +3,29 @@
   "ok": true,
   "action": "npi.capabilities",
   "summary": {
-    "domain_count": 11,
-    "available_domain_count": 11
+    "domain_count": 12,
+    "available_domain_count": 12
   },
   "data": {
     "domains": [
+      {
+        "domain": "module_library",
+        "available": true,
+        "commands": [
+          {
+            "command": "::npi_L1::npi_mod_define_get_inst",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_port",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_parameter",
+            "available": true
+          }
+        ]
+      },
       {
         "domain": "netlist",
         "available": true,
@@ -20,8 +38,8 @@
       }
     ],
     "summary": {
-      "domain_count": 11,
-      "available_domain_count": 11
+      "domain_count": 12,
+      "available_domain_count": 12
     }
   },
   "warnings": []

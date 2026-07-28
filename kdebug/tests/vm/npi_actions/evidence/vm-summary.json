@@ -4,6 +4,7 @@
   "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2",
   "actions": {
     "crdb.correlates": {
+      "action": "crdb.correlates",
       "ok": true,
       "summary": {
         "name": "npi_crdb_top.state",
@@ -14,6 +15,7 @@
       "error_code": ""
     },
     "crdb.resolve": {
+      "action": "crdb.resolve",
       "ok": true,
       "summary": {
         "name": "npi_crdb_top.state",
@@ -23,29 +25,32 @@
       "error_code": ""
     },
     "dm.add_net": {
+      "action": "dm.add_net",
       "ok": true,
       "summary": {
         "module": "npi_fixture_top",
         "name": "debug_bus",
-        "output_dir": "/home/host/kverif_npi_action_test/design/dm-add-net",
+        "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-add-net",
         "status": "written"
       },
       "error_code": ""
     },
     "dm.clone_module": {
+      "action": "dm.clone_module",
       "ok": true,
       "summary": {
         "module": "npi_fixture_alu",
         "new_name": "npi_fixture_alu_clone",
-        "output_dir": "/home/host/kverif_npi_action_test/design/dm-clone",
+        "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-clone",
         "status": "written"
       },
       "error_code": ""
     },
     "fsdb.writer.create_scope": {
+      "action": "fsdb.writer.create_scope",
       "ok": true,
       "summary": {
-        "output": "/home/host/kverif_npi_action_test/hierarchy.fsdb",
+        "output": "/home/host/kverif_npi_action_test_20260728_full/hierarchy.fsdb",
         "scope_count": 3,
         "up_count": 1,
         "status": "written"
@@ -53,21 +58,276 @@
       "error_code": ""
     },
     "fsdb.writer.overwrite_guard": {
+      "action": "fsdb.writer.create_scope",
       "ok": false,
       "summary": {},
       "error_code": "OUTPUT_EXISTS"
     },
+    "language.iterate": {
+      "action": "language.iterate",
+      "ok": true,
+      "summary": {
+        "reference": "npi_fixture_top.u_alu",
+        "object_type": "npiParameter",
+        "count": 3,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "language.relate": {
+      "action": "language.relate",
+      "ok": true,
+      "summary": {
+        "source": "npi_fixture_top.u_alu.result",
+        "relation_type": "npiHighConn",
+        "status": "resolved"
+      },
+      "error_code": ""
+    },
+    "language.resolve": {
+      "action": "language.resolve",
+      "ok": true,
+      "summary": {
+        "name": "npi_fixture_top.u_alu",
+        "scope": "",
+        "status": "resolved"
+      },
+      "error_code": ""
+    },
+    "language.value": {
+      "action": "language.value",
+      "ok": true,
+      "summary": {
+        "name": "npi_fixture_top.u_alu.WIDTH",
+        "format": "npiDecStrVal",
+        "status": "ok"
+      },
+      "error_code": ""
+    },
+    "module.find_instances": {
+      "action": "module.find_instances",
+      "ok": true,
+      "summary": {
+        "definition": "npi_fixture_alu",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.inspect": {
+      "action": "module.inspect",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "section_count": 8,
+        "truncated": false,
+        "counts": {
+          "parameters": 3,
+          "ports": 3,
+          "io": 3,
+          "nets": 3,
+          "variables": 1,
+          "functions": 1,
+          "continuous_assignments": 1,
+          "always_processes": 1
+        }
+      },
+      "error_code": ""
+    },
+    "module.objects.always_processes": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "always_processes",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.continuous_assignments": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "continuous_assignments",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.functions": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "functions",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.generate_scopes": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "generate_scopes",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.initial_processes": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "initial_processes",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.instances": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "instances",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.instances_in_generate": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "instances_in_generate",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.io": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "io",
+        "count": 3,
+        "returned_count": 3,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.language_interfaces": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "language_interfaces",
+        "count": 0,
+        "returned_count": 0,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.nets": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "nets",
+        "count": 3,
+        "returned_count": 3,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.parameters": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "parameters",
+        "count": 3,
+        "returned_count": 3,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.ports": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "ports",
+        "count": 3,
+        "returned_count": 3,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.primitives": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "primitives",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.tasks": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top",
+        "kind": "tasks",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
+    "module.objects.variables": {
+      "action": "module.objects",
+      "ok": true,
+      "summary": {
+        "module": "npi_fixture_top.u_alu",
+        "kind": "variables",
+        "count": 1,
+        "returned_count": 1,
+        "truncated": false
+      },
+      "error_code": ""
+    },
     "netlist.iterate": {
+      "action": "netlist.iterate",
       "ok": true,
       "summary": {
         "reference": "npi_fixture_top",
         "object_type": "npiNlNet",
-        "count": 4,
+        "count": 7,
         "truncated": false
       },
       "error_code": ""
     },
     "netlist.resolve": {
+      "action": "netlist.resolve",
       "ok": true,
       "summary": {
         "name": "npi_fixture_top.result",
@@ -76,24 +336,28 @@
       "error_code": ""
     },
     "npi.capabilities": {
+      "action": "npi.capabilities",
       "ok": true,
       "summary": {
-        "domain_count": 11,
-        "available_domain_count": 11
+        "domain_count": 12,
+        "available_domain_count": 12
       },
       "error_code": ""
     },
     "power.list": {
+      "action": "power.list",
       "ok": false,
       "summary": {},
       "error_code": "LICENSE_UNAVAILABLE"
     },
     "power.resolve": {
+      "action": "power.resolve",
       "ok": false,
       "summary": {},
       "error_code": "LICENSE_UNAVAILABLE"
     },
     "scope.list": {
+      "action": "scope.list",
       "ok": true,
       "summary": {
         "path": "top",
@@ -103,38 +367,42 @@
       "error_code": ""
     },
     "text.line": {
+      "action": "text.line",
       "ok": true,
       "summary": {
-        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-        "line": 7,
-        "word_count": 12
+        "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 27,
+        "word_count": 14
       },
       "error_code": ""
     },
     "text.replace_line": {
+      "action": "text.replace_line",
       "ok": true,
       "summary": {
-        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-        "line": 7,
-        "output": "/home/host/kverif_npi_action_test/design/design.patched.sv",
+        "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 27,
+        "output": "/home/host/kverif_npi_action_test_20260728_full/design/design.patched.sv",
         "status": "written"
       },
       "error_code": ""
     },
     "text.words": {
+      "action": "text.words",
       "ok": true,
       "summary": {
-        "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-        "line": 7,
-        "count": 12,
+        "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+        "line": 27,
+        "count": 14,
         "truncated": false
       },
       "error_code": ""
     },
     "transaction.writer.create": {
+      "action": "transaction.writer.create",
       "ok": true,
       "summary": {
-        "output": "/home/host/kverif_npi_action_test/transactions.fsdb",
+        "output": "/home/host/kverif_npi_action_test_20260728_full/transactions.fsdb",
         "stream": "bus.requests",
         "transaction_count": 2,
         "relation_count": 1,
@@ -143,12 +411,13 @@
       "error_code": ""
     },
     "vcs.summary": {
+      "action": "vcs.summary",
       "ok": true,
       "summary": {
-        "database": "/home/host/kverif_npi_action_test/design/simv.daidir",
+        "database": "/home/host/kverif_npi_action_test_20260728_full/design/simv.daidir",
         "warnings": 1,
         "errors": 0,
-        "modules": 2
+        "modules": 3
       },
       "error_code": ""
     }

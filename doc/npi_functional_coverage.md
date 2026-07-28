@@ -4,6 +4,11 @@
 
 当前 KVerif **不能覆盖 NPI 手册的全部功能**。
 
+本轮已经补齐用户指出的常用只读缺口：module definition/instance、直接与 generate 例化、
+parameter/localparam 有效值、module input/output、port 顺序/方向、high/low connection，以及
+Module Library 的全部 15 类 getter。其余未开放项仍在本矩阵和逐 API 清单中明确保留，
+不会用“有一个同名前缀 action”冒充完整覆盖。
+
 此前按 `npi_*` 符号数量得到的约 6.6% 只能表示“生产 Tcl 中直接出现过多少个 API 名称”，
 不能作为功能覆盖率，原因是手册大量存在以下重复形态：
 
@@ -19,10 +24,10 @@
 
 | 判定 | 数量 | 含义 |
 | --- | ---: | --- |
-| 完整覆盖 | 23 | 公共 KVerif 命令可以完成该任务；不要求逐个暴露底层重载 |
-| 部分覆盖 | 22 | 只能完成该任务的一个重要子集，或缺少通用对象/属性/方向 |
+| 完整覆盖 | 25 | 公共 KVerif 命令可以完成该任务；不要求逐个暴露底层重载 |
+| 部分覆盖 | 21 | 只能完成该任务的一个重要子集，或缺少通用对象/属性/方向 |
 | 等价或间接覆盖 | 2 | KVerif 自己完成生命周期或传输，但不暴露对应 NPI 对象语义 |
-| 未覆盖 | 23 | 当前公共工具和生产 Tcl 均没有等价能力 |
+| 未覆盖 | 22 | 当前公共工具和生产 Tcl 均没有等价能力 |
 
 这里不再给出单一百分比。70 个能力单元没有相同业务权重；例如“读取一个 FSDB 值”和
 “构造并重写完整 HDL 设计”不能按 1:1 的产品价值加权。
@@ -30,6 +35,8 @@
 ## 2. 审计边界
 
 - 手册：`VC_APPS_NPI.pdf`，3568 页，标题页为 **Version O-2018.09-SP2, March 2019**。
+- 手册 28 个 Model/Library 域、759 个 API 目录条目的逐项判定见
+  [`npi_api_inventory.md`](npi_api_inventory.md)；本文件继续使用去重后的用户任务口径。
 - 该版本与 VM 的 Verdi `Verdi_O-2018.09-SP2` 一致。
 - 生产直接 NPI 入口仅审计：
   - `kdebug/tcl_engine/kdebug_npi.tcl`
@@ -59,9 +66,9 @@
 | --- | --- | --- | --- | --- |
 | A1 | 初始化、加载和关闭设计 | `npi_init/load_design/end` | 等价/间接 | wrapper 启动 Verdi 并加载 daidir，但用户不能操作通用 NPI design session |
 | A2 | 按完整名称解析 HDL 对象 | `npi_handle_by_name` | 完整 | `signal.resolve`、`signal.canonicalize` |
-| A3 | 任意 HDL 对象关系遍历 | `npi_handle/iterate/scan` | 部分 | 只对 driver/load、少量端口和控制关系提供专用 action |
-| A4 | 任意 HDL 对象属性读取 | `npi_get/get_str` | 部分 | 固定读取 name/full-name/type/file/line，不能请求任意 property |
-| A5 | Language Model 对象值读取 | `npi_get_value` | 未覆盖 | 波形值来自 FSDB，不等价于通用 Language Model value |
+| A3 | 任意 HDL 对象关系遍历 | `npi_handle/iterate/scan` | 完整 | `language.relate/iterate` 支持受控 `npi*` relation/object type；端口 high/low relation 使用真实 port handle |
+| A4 | 任意 HDL 对象属性读取 | `npi_get/get_str` | 部分 | `language.resolve` 和统一对象 JSON 返回固定安全属性集，不接受任意 property 注入 |
+| A5 | Language Model 对象值读取 | `npi_get_value` | 完整 | `language.value` 和参数对象的 `values.*` 返回 elaborated 参数、localparam 或常量值 |
 | A6 | handle 比较、重叠、range、永久化和批量释放 | compare/overlap/range/permanent/release-all | 未覆盖 | 仅内部逐个释放 handle |
 
 ### B. Netlist Model（手册 62-87 页）
@@ -189,26 +196,47 @@
 | N2 | 指定时刻 active driver trace | active-trace name/hdl/dump variants | 完整 | `trace.active_driver` |
 | N3 | 多跳 active-driver chain | repeated active trace | 完整 | `trace.active_driver_chain` |
 | N4 | flattened-netlist fan-in/fan-out register 和 all-path trace | `npi_nl_*trace*`、report-all-path | 未覆盖 | 当前 trace 是 RTL/Language Model 路径 |
-| N5 | module port 高低连接、跨层映射和 equivalent signal | connection/equivalent-signal variants | 部分 | `port.trace`、`instance.map`、`interface.resolve` 覆盖常用场景，不是通用 netlist mapping |
+| N5 | module port 高低连接、跨层映射和 equivalent signal | connection/equivalent-signal variants | 部分 | `module.objects/inspect` 完整返回 port direction/high/low connection；复杂 equivalent-signal/netlist mapping 仍为部分 |
 | N6 | VANL value set/propagate/get 和路径分析 | `npi_vanl_*` | 未覆盖 | 无 VANL session |
-| N7 | instance/signal regex 与 wildcard 查找 | `npi_find_*` | 未覆盖 | 只支持精确 resolve；`signal.search` 已移除 |
-| N8 | 通用 hierarchy/module/component/list 遍历 | hier-tree、module/component/list libraries | 部分 | 有 scope/source/instance 专用 action，无通用 handle 列表和 callback |
+| N7 | instance/signal regex 与 wildcard 查找 | `npi_find_*` | 未覆盖 | `module.find_instances` 支持精确 definition 查实例，但不等价于通用 regex/wildcard find |
+| N8 | 通用 hierarchy/module/component/list 遍历 | hier-tree、module/component/list libraries | 部分 | Module Library 32 个 getter/dump 条目已由 `module.objects/find_instances/inspect` 语义覆盖；通用 callback/list handle 仍未开放 |
 | N9 | expression decompile、expression traverse、typespec 工具 | expr/typespec/hdl-info utilities | 部分 | expression decompile 已用；callback traversal 和完整 typespec 工具缺失 |
 | N10 | 参数解析、命令通信、session 和层次名工具 | arg/socket/communicate/usn | 等价/间接 | KVerif 以 JSON CLI、stdio-loop、MCP 和 session manager 提供等价工作流，不暴露 NPI utility object |
 
+#### Module Library 逐类映射（手册 2741-2813 页）
+
+手册 Module Library 的 32 个 API 条目由 15 类 getter、definition-to-instance 查询和对应
+dump 变体组成。KVerif 不复制 stdout dump action，而是用统一 JSON 返回相同对象、文件和行号。
+
+| 能力 | NPI API | KVerif action | 判定 |
+| --- | --- | --- | --- |
+| module definition 查全部实例 | `npi_mod_define_get_inst` 及 dump | `module.find_instances` | 完整 |
+| 连续赋值、function、generate scope | `get_cont_assign/get_func/get_gen_scope` 及 dump | `module.objects` 对应 kind | 完整 |
+| 直接实例与 generate 内实例 | `get_instance/get_instance_in_gen_scope` 及 dump | `module.objects` 对应 kind | 完整 |
+| IO、混合语言边界、net、variable | `get_io/get_lang_interface/get_net/get_var` 及 dump | `module.objects` 对应 kind | 完整 |
+| parameter/localparam 与有效值 | `get_parameter`、`npi_get_value` 及 dump | `module.objects kind=parameters`、`language.value` | 完整 |
+| port 顺序、方向和上下层连接 | `get_port`、`npiHighConn/npiLowConn` 及 dump | `module.objects kind=ports`、`language.relate` | 完整 |
+| primitive、always、initial、task | 对应 `get_*` | `module.objects` 对应 kind | 完整 |
+| 常用模块一次聚合检查 | 多个 getter 组合 | `module.inspect` | 完整 |
+
 ## 5. Verdi 2018 VM 实测
 
-2026-07-24 在 VM `192.168.31.116` 上由普通用户 `host` 使用
+2026-07-28 在 VM `192.168.31.116` 上由普通用户 `host` 使用
 `Verdi_O-2018.09-SP2` 执行 `kdebug/tests/vm/npi_actions/run.sh`。测试从源码构建最小
 VCS/KDB 和 CRDB，调用公共 `tools/kdebug` 命令，不直接运行内部 Tcl procedure。
 
 | 结果 | action | 证据摘要 |
 | --- | --- | --- |
-| PASS | `npi.capabilities` | 11/11 NPI 域的目标 Tcl command 可用 |
-| PASS | `netlist.resolve/iterate` | 解析 `result[7:0]`，遍历 4 个 net |
+| PASS | `npi.capabilities` | 12/12 探测域可用；Module Library 16 个必需 Tcl command 全部存在 |
+| PASS | `language.resolve/iterate/relate/value` | 解析实例，遍历 3 个参数，读取有效 `WIDTH=12`，解析 output port 的 `npiHighConn` |
+| PASS | `module.find_instances` | definition `npi_fixture_alu` 返回实例 `npi_fixture_top.u_alu` |
+| PASS | `module.objects` 全 15 kind | 14 类返回正样本；纯 SV 设计的 mixed-language interface 正确返回 0 |
+| PASS | `module.inspect` | 8 个 section：3 parameter、3 port、3 IO、3 net、1 variable/function/continuous-assign/always |
+| PASS | port/parameter 业务断言 | `lhs/rhs/result` 方向正确；每个 port high/low 非空；localparam `RESULT_WIDTH=12` |
+| PASS | `netlist.resolve/iterate` | 解析 `result[11:0]` 并遍历真实 net |
 | PASS | `text.line/words/replace_line` | 读取 12 个 word，并生成非空 patched source |
 | PASS | `dm.add_net/clone_module` | 两个 DM writer 输出目录均含非空文件 |
-| PASS | `vcs.summary` | 真实 `-Xdump_vcsdb` 数据库返回 2 个 module、0 error |
+| PASS | `vcs.summary` | 真实 `-Xdump_vcsdb` 数据库返回 3 个 module、0 error |
 | PASS | `transaction.writer.create` | 生成非空 FSDB，含 2 个 transaction 和 1 个 relation |
 | PASS | `fsdb.writer.create_scope` | 生成非空 FSDB，含 3 个 scope；重复输出返回 `OUTPUT_EXISTS` |
 | PASS | `crdb.resolve/correlates` | CRDB 构建成功，RTL `state` 返回 1 个真实 gate correlation |
@@ -225,7 +253,9 @@ Tcl 实现失败。
    APB/AXI/stream 分析是当前最完整的能力域。
 2. **RTL 调试 trace**：精确信号解析、driver/load、active driver 和多跳链已形成面向用户的稳定流程。
 3. **Coverage 只读分析**：VDB test、scope、metric、bin、状态、holes、summary 和导出覆盖较完整。
-4. **受控 NPI 专用任务**：Netlist、Text、有限 DM 修改、VCS summary、两类 writer 和 CRDB
+4. **Language/Module 对象模型**：模块例化、generate 例化、参数有效值、localparam、IO、端口方向、
+   high/low 连接和 15 类 Module getter 已有独立 schema、公共 CLI 和 Verdi 2018 实测。
+5. **受控 NPI 专用任务**：Netlist、Text、有限 DM 修改、VCS summary、两类 writer 和 CRDB
    mapping 已有独立 schema、公共 CLI 和 Verdi 2018 实测。
 
 ## 7. 最大缺口
@@ -234,7 +264,8 @@ Tcl 实现失败。
    FSDB writer；通用 AST/层次重构、signal value writer 和 coverage exclusion mutation 仍缺失。
 2. **专用模型仍不完整**：transaction FSDB reader、Power crossing/network、完整 Netlist connectivity、
    VCS 任意 property 和 CRDB mutation 尚未覆盖。
-3. **通用对象模型不足**：当前以任务型 action 为主，不允许调用者任意选择 object type、method、property。
+3. **通用属性仍受控**：Language Model 已允许选择 object/relation type，但 property 仍是固定安全集合；
+   compare/overlap/permanent handle、index/range 专用入口尚未开放。
 4. **高级 library 子域不足**：VANL、regex/wildcard find、netlist fan-in/fan-out、通用 hierarchy callbacks。
 
 ## 8. 产品口径建议
@@ -242,7 +273,8 @@ Tcl 实现失败。
 - 不应宣称“KVerif 覆盖全部 NPI”或给出基于符号数的覆盖率。
 - 可准确描述为：
   **KVerif 覆盖 Verdi O-2018.09-SP2 NPI 中面向 RTL trace、FSDB waveform、VDB coverage
-  的核心工作流，并提供 Netlist、Text/有限 DM 修改、transaction/scope writer、VCS 和 CRDB
-  的任务型子集；它不等价于 NPI 的完整通用对象模型。Power 查询已实现，但仍需具备
+  的核心工作流，完整覆盖常用 Language/Module 只读检查，并提供 Netlist、Text/有限 DM 修改、
+  transaction/scope writer、VCS 和 CRDB 的任务型子集；它不等价于 NPI 的全部 759 个目录条目。
+  Power 查询已实现，但仍需具备
   `PowerAwareAnalysis` license 的环境完成业务数据实测。**
 - 后续扩展应按本矩阵增加独立 Tcl action 和 VM 实测，不应为了提高 API 名称数量机械包装重载。

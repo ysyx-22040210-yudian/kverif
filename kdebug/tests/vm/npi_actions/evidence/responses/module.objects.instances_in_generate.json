@@ -1,0 +1,69 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.objects",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "module": "npi_fixture_top",
+    "kind": "instances_in_generate",
+    "count": 1,
+    "returned_count": 1,
+    "truncated": false
+  },
+  "data": {
+    "module": "npi_fixture_top",
+    "kind": "instances_in_generate",
+    "count": 1,
+    "returned_count": 1,
+    "truncated": false,
+    "items": [
+      {
+        "object": {
+          "handle": "371367696",
+          "name": "u_leaf",
+          "full_name": "npi_fixture_top.g_wide.u_leaf",
+          "parent_module": "npi_fixture_top",
+          "type": "npiModule",
+          "def_name": "npi_fixture_leaf",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "line": 53,
+          "def_line": 1,
+          "size": null,
+          "direction": "npiUndefined",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiUndefined",
+          "net_type": "npiUndefined",
+          "local_param": null,
+          "signed": null,
+          "automatic": 0,
+          "top": 0,
+          "cell_instance": 0,
+          "decompiled": ""
+        }
+      }
+    ],
+    "summary": {
+      "module": "npi_fixture_top",
+      "kind": "instances_in_generate",
+      "count": 1,
+      "returned_count": 1,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

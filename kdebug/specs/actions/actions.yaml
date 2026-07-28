@@ -1813,6 +1813,118 @@
       }
     },
     {
+      "name": "language.resolve",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/language.resolve.request.schema.json",
+        "response": "schemas/v1/actions/language.resolve.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/language.resolve.basic.json"],
+        "response": ["examples/responses/language.resolve.basic.json"]
+      },
+      "required_args": ["name"]
+    },
+    {
+      "name": "language.iterate",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/language.iterate.request.schema.json",
+        "response": "schemas/v1/actions/language.iterate.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/language.iterate.basic.json"],
+        "response": ["examples/responses/language.iterate.basic.json"]
+      },
+      "required_args": ["name", "object_type"]
+    },
+    {
+      "name": "language.relate",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/language.relate.request.schema.json",
+        "response": "schemas/v1/actions/language.relate.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/language.relate.basic.json"],
+        "response": ["examples/responses/language.relate.basic.json"]
+      },
+      "required_args": ["name", "relation_type"]
+    },
+    {
+      "name": "language.value",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/language.value.request.schema.json",
+        "response": "schemas/v1/actions/language.value.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/language.value.basic.json"],
+        "response": ["examples/responses/language.value.basic.json"]
+      },
+      "required_args": ["name"]
+    },
+    {
+      "name": "module.objects",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/module.objects.request.schema.json",
+        "response": "schemas/v1/actions/module.objects.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/module.objects.basic.json"],
+        "response": ["examples/responses/module.objects.basic.json"]
+      },
+      "required_args": ["module", "kind"]
+    },
+    {
+      "name": "module.find_instances",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/module.find_instances.request.schema.json",
+        "response": "schemas/v1/actions/module.find_instances.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/module.find_instances.basic.json"],
+        "response": ["examples/responses/module.find_instances.basic.json"]
+      },
+      "required_args": ["definition"]
+    },
+    {
+      "name": "module.inspect",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/module.inspect.request.schema.json",
+        "response": "schemas/v1/actions/module.inspect.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/module.inspect.basic.json"],
+        "response": ["examples/responses/module.inspect.basic.json"]
+      },
+      "required_args": ["module"]
+    },
+    {
       "name": "netlist.resolve",
       "category": "design",
       "status": "experimental",

@@ -8,20 +8,20 @@
   },
   "session": null,
   "summary": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "word_count": 12
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "word_count": 14
   },
   "data": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "full_name": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "content": "    result = lhs + rhs;\n",
-    "word_count": 12,
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "full_name": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "content": "    sum = add_with_bias(lhs, rhs);\n",
+    "word_count": 14,
     "summary": {
-      "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-      "line": 7,
-      "word_count": 12
+      "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+      "line": 27,
+      "word_count": 14
     },
     "verdi": {
       "exit_code": 0

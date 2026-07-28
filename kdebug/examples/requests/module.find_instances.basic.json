@@ -1,0 +1,7 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "module.find_instances",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {"definition": "npi_fixture_alu"},
+  "limits": {"max_rows": 100}
+}

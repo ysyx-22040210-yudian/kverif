@@ -71,7 +71,14 @@ kverif 的验证工程师。二次开发不使用语言 SDK，也不导入 kveri
 
 | 参数/形式 | 类型 | 必需性和默认值 | 可重复 | 示例值 | 完整 CLI 片段 | 校验或常见错误 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `-h/--help/-help` | flag | 可选；不同工具接受的别名略有差异 | 否 | 无值 | `/home/host/kverif/tools/kdebug -h`、`/home/host/kverif/tools/kcov --help` | 只打印帮助，不执行查询；kdebug 全局兼容 `-h/-help`，快捷子命令兼容 `-h/--help` |
 | `--json` | flag | 可选；默认 kout/人类文本 | 否 | 无值 | `--json value-at ...` | `kdebug/kcov` 可放子命令前；`kberif` 必须放子命令前；不要再用 `grep` 解析 JSON |
+| `--text/--kout` | flag | 可选；显式选择人类文本 | 否 | 无值 | `/home/host/kverif/tools/kdebug --kout actions` | 不适合作为稳定机器合同；自动化应改用 `--json` |
+| `--pretty` | flag | 可选；默认紧凑 JSON | 否 | 无值 | `/home/host/kverif/tools/kentry decode --config /data/entry.yaml --input /data/fragments.jsonl --json --pretty` | 只改变 JSON 缩进；kbit、kentry 和 loop client 支持 |
+| `REQUEST.json` / `-` | 位置参数 | JSON transport 单请求输入；`-` 表示 stdin | 否 | `/data/request.json` | `/home/host/kverif/tools/kdebug --json /data/request.json` | JSON 只是参数容器；FSDB/daidir/VDB 仍须在 request 中引用真实路径 |
+| `--stdio-loop` | flag | kdebug/kcov 长驻 JSONL transport；默认关闭 | 否 | 无值 | `/home/host/kverif/tools/kdebug --stdio-loop` | 首行等待 ready；之后 stdin 一行一个 request，协议 stdout 禁止混入日志 |
+| `--request FILE` | 文件路径 | kcov 原始 JSON transport 可选 | 否 | `/data/cov.request.json` | `/home/host/kverif/tools/kcov --json --request /data/cov.request.json` | 与快捷子命令调用分开使用；request 必须满足 `kcov.v1` |
+| `--once` | flag | kcov 单请求 transport 兼容开关；默认关闭 | 否 | 无值 | `/home/host/kverif/tools/kcov --once --request /data/cov.request.json --json` | 不用于快捷查询；新脚本通常直接传 request 文件即可 |
 | `--fsdb FILE` | 文件路径 | 波形 action 必需；无默认值 | 否 | `/data/run/waves.fsdb` | `--fsdb /data/run/waves.fsdb` | 文件不存在、格式错误或缺 license 时 `ok=false`/非零退出 |
 | `--daidir DIR` | 目录路径 | KDB action 必需；无默认值 | 否 | `/data/build/simv.daidir` | `--daidir /data/build/simv.daidir` | 必须与本次 VCS `-kdb` 构建匹配，不能跨构建复用 |
 | `--vdb DIR` | 目录路径 | coverage action 必需，或改用 `--session` | 否 | `/data/run/simv.vdb` | `--vdb /data/run/simv.vdb` | `--fake` 仅合约测试，不能产生正式 coverage 结论 |
@@ -85,6 +92,30 @@ kverif 的验证工程师。二次开发不使用语言 SDK，也不导入 kveri
 | `--include/--exclude GLOB` | glob 字符串 | coverage 过滤可选 | 是 | `*fifo*` | `--include '*fifo*' --exclude '*assert*'` | 用引号阻止 shell 提前展开 glob |
 | `--max-items N` | 正整数 | 可选；默认由 action 决定 | 否 | `100` | `--max-items 100` | 同时检查 `truncated`/overflow；不要假定返回全集 |
 | `--timeout-ms N` | 正整数 | 可选；未传时使用 action/backend 默认值 | 否 | `120000` | `--timeout-ms 120000` | 只在调用方明确需要时设置；`0` 在部分 backend 表示“使用默认值”，不能统一理解为无限等待 |
+
+### 0.5 全部命令行参数查阅索引
+
+第 10 章不是“常用参数节选”，而是按当前 public CLI 解析器整理的完整参数表。每个参数均给出
+类型、必需性、默认值、作用、示例片段或完整命令。`kdebug action NAME` 还有第二层业务参数，
+其中 Verdi 2018 Tcl NPI action 的 `target/args/limits` 全字段见 10.2.1 的“逐字段参数汇总表”。
+
+| 可执行文件 | 参数覆盖范围 | 完整表位置 | 一条可复制的检查命令 |
+| --- | --- | --- | --- |
+| `kdebug` | JSON/kout、request 文件/stdin、stdio-loop、全部快捷参数、session、log、通用 action 参数 | 10.2 | `/home/host/kverif/tools/kdebug --json schema --action module.objects --kind request` |
+| `kdebug` NPI action | 22 个 Tcl NPI action 的资源、args、limits、writer 嵌套数组字段 | 10.2.1 | `/home/host/kverif/tools/kdebug --json action module.objects --daidir /data/build/simv.daidir --arg module=top.u_alu --arg kind=ports --limit max_rows=200` |
+| `kcov` | JSON transport、session/VDB、过滤、排序、overflow、artifact 和全部查询/导出子命令 | 10.3 | `/home/host/kverif/tools/kcov --json cov-holes --vdb /data/run/simv.vdb --metrics line,toggle --max-items 100` |
+| `kbit` | 输出、2/4-state、位宽/符号、变量，以及 17 个计算/检查子命令 | 10.4 | `/home/host/kverif/tools/kbit conv "8'shff" --width 16 --signed --json` |
+| `kentry` | JSON request、decode/explain/validate、config/input/output 参数 | 10.5 | `/home/host/kverif/tools/kentry decode --config /data/entry.yaml --input /data/fragments.jsonl --json --pretty` |
+| `kloc` | resolve/context/stats/annotate 的位置、map、上下文和 top 参数 | 10.6 | `/home/host/kverif/tools/kloc context L_00000001 --map /data/sim.log.kloc.jsonl --before 8 --after 12 --json` |
+| `ksva` | list/scan/lint/explain/parse 的 file/property/format/strict/IR 参数 | 10.7 | `/home/host/kverif/tools/ksva explain --file /data/protocol.sv --property p_req_grant --json --strict` |
+| `kberif` | 全局 JSON、配置、生成、查询、card/detail、namespace 和 agent 参数 | 10.8 | `cd /data/project && /home/host/kverif/tools/kberif --json status` |
+| `keda-runner` | config、环境快照、allowlist 查询和 run 的 action/target/option 参数 | 10.9 | `/home/host/kverif/tools/keda-runner --config /data/project/.keda-runner.yaml run --action sim --target smoke --option TEST=basic --dry-run` |
+| `kverif-loop-server/client` | socket/backend、raw JSON、timeout，以及 debug/coverage session 参数 | 10.10 | `/home/host/kverif/tools/kverif-loop-client --socket /tmp/kverif-loop-host.sock ping` |
+| `kverif-mcp`、`kverif-lsf-doctor` | MCP transport 和 direct/LSF 部署环境参数 | 10.11 | `PYTHON=/home/host/kverif/.venv38/bin/python /home/host/kverif/tools/kverif-lsf-doctor` |
+
+参数名称相同不代表语义完全相同。例如 `kdebug --format` 是波形值 radix，
+`kcov --artifact-format` 是导出文件格式，`ksva parse --emit` 是 IR 层级。查参数时应先定位
+到对应工具表，再看该子命令行；不要只按参数名跨工具套用。
 
 可直接用于 Shell 的变量表：
 
@@ -1000,6 +1031,13 @@ KDEBUG=/home/host/kverif/tools/kdebug
 | action | 资源和必需 `args` | 可选参数/默认值 | 可直接运行的绝对路径例子 | 主要 `data` | 常见错误 |
 | --- | --- | --- | --- | --- | --- |
 | `npi.capabilities` | 无资源、无 args | 无 | `/home/host/kverif/tools/kdebug --json action npi.capabilities` | 按 domain 列当前 Verdi 实际注册的 Tcl NPI command | `VERDI_NOT_FOUND`、`LICENSE_UNAVAILABLE` |
+| `language.resolve` | `--daidir`；`name` | `scope=""` | `/home/host/kverif/tools/kdebug --json action language.resolve --daidir /data/build/simv.daidir --arg name=top.u_alu` | 对象固定属性、可用值格式和 high/low connection | `LANGUAGE_OBJECT_NOT_FOUND` |
+| `language.iterate` | `--daidir`；`name/object_type` | `scope=""`；`max_rows=200` | `/home/host/kverif/tools/kdebug --json action language.iterate --daidir /data/build/simv.daidir --arg name=top.u_alu --arg object_type=npiParameter --limit max_rows=200` | typed `items/count/truncated`；参数项含 elaborated values | `LANGUAGE_OBJECT_NOT_FOUND`、`INVALID_ENUM` |
+| `language.relate` | `--daidir`；`name/relation_type` | `scope=""` | `/home/host/kverif/tools/kdebug --json action language.relate --daidir /data/build/simv.daidir --arg name=top.u_alu.result --arg relation_type=npiHighConn` | 一对一关系目标；端口 high/low 自动使用真实 port handle | `LANGUAGE_RELATION_NOT_FOUND`、`INVALID_ENUM` |
+| `language.value` | `--daidir`；`name` | `format=npiHexStrVal` | `/home/host/kverif/tools/kdebug --json action language.value --daidir /data/build/simv.daidir --arg name=top.u_alu.WIDTH --arg format=npiDecStrVal` | value、size、signed；读取实例有效参数值而非源码默认值 | `VALUE_UNAVAILABLE`、`INVALID_ENUM` |
+| `module.find_instances` | `--daidir`；`definition` | `max_rows=200` | `/home/host/kverif/tools/kdebug --json action module.find_instances --daidir /data/build/simv.daidir --arg definition=alu --limit max_rows=200` | 指定 definition 的全部实例路径、源码和行号 | `MODULE_QUERY_FAILED` |
+| `module.objects` | `--daidir`；`module/kind` | `max_rows=200` | `/home/host/kverif/tools/kdebug --json action module.objects --daidir /data/build/simv.daidir --arg module=top.u_alu --arg kind=ports --limit max_rows=200` | 一个 Module Library getter 类别的对象、计数、截断；ports 含方向和连接，parameters 含值 | `MODULE_NOT_FOUND`、`MODULE_QUERY_FAILED` |
+| `module.inspect` | `--daidir`；`module` | `sections` 默认 instances/parameters/ports/io/nets/variables/generate_scopes；`max_rows=200` | `/home/host/kverif/tools/kdebug --json action module.inspect --daidir /data/build/simv.daidir --arg module=top.u_alu --arg 'sections=["parameters","ports","io","nets"]'` | 多 section 一次汇总，含各 section count/returned_count | `MODULE_NOT_FOUND`、`MODULE_QUERY_FAILED` |
 | `netlist.resolve` | `--daidir`；`name` | `object_type=npiNl*` 可选 | `/home/host/kverif/tools/kdebug --json action netlist.resolve --daidir /data/build/simv.daidir --arg name=top.u_dut.ready --arg object_type=npiNlNet` | flattened 对象的 name/full_name/type/size 等固定属性 | `NETLIST_OBJECT_NOT_FOUND`、`INVALID_ENUM` |
 | `netlist.iterate` | `--daidir`；`object_type=npiNl*` | `name` 可选；`max_rows` 默认 `200` | `/home/host/kverif/tools/kdebug --json action netlist.iterate --daidir /data/build/simv.daidir --arg name=top.u_dut --arg object_type=npiNlNet --limit max_rows=200` | `items/count/truncated`；name 为空且 type 为 `npiNlInst` 时列 top | `NETLIST_OBJECT_NOT_FOUND`、`INVALID_ENUM` |
 | `text.line` | `--daidir`；`file`、正整数 `line` | 无 | `/home/host/kverif/tools/kdebug --json action text.line --daidir /data/build/simv.daidir --arg file=/data/project/rtl/top.sv --arg line=127` | full_name、line、content、word_count | `TEXT_FILE_NOT_FOUND`、`TEXT_LINE_NOT_FOUND` |
@@ -1015,9 +1053,148 @@ KDEBUG=/home/host/kverif/tools/kdebug
 | `transaction.writer.create` | `output/stream/transactions` | `unit=1ns`、`begin_time=0`、relations 空、`overwrite=false` | `/home/host/kverif/tools/kdebug --json action transaction.writer.create --arg output=/data/reports/transactions.fsdb --arg stream=bus.requests --arg 'transactions=[{"start_delta":10,"duration":20,"type":"npiFsdbwTransTransaction","label":"req0"}]'` | 完整关闭的 transaction FSDB、计数和结束时间 | `INVALID_ARGUMENT`、`INVALID_PLAN`、`OUTPUT_EXISTS`、`FSDB_WRITER_FAILED` |
 | `fsdb.writer.create_scope` | `output`，以及 `operations` 或 `scopes` | `unit=1ns`、`begin_time=0`、`end_time_delta=0`、`overwrite=false` | `/home/host/kverif/tools/kdebug --json action fsdb.writer.create_scope --arg output=/data/reports/hierarchy.fsdb --arg 'operations=[{"op":"scope","type":"npiFsdbScopeSvModule","name":"top"}]' --arg end_time_delta=100` | 完整关闭的 signal FSDB scope 层次 | `INVALID_ARGUMENT`、`INVALID_PLAN`、`OUTPUT_EXISTS`、`FSDB_WRITER_FAILED` |
 
+**NPI action 逐字段参数汇总表**
+
+下面的“字段路径”对应 JSON request；“命令行写法”是同一字段的参数式写法。`args.x` 使用
+`--arg x=...`，`target.x` 使用专用参数或 `--target x=...`，`limits.x` 使用
+`--limit x=...`。数组和对象必须作为一个 argv，并在 Bash 中用单引号包住完整 `KEY=JSON`。
+
+| 适用 action | 字段路径 | 必需性/默认值 | 功能和使用方式 | 命令行参数例子 |
+| --- | --- | --- | --- | --- |
+| 所有 design NPI action | `target.daidir` | 设计查询必需，或由兼容 session 提供 | 指向与当前 RTL 构建匹配的 VCS `-kdb` elaboration 数据库 | `--daidir /data/build/simv.daidir` |
+| `power.resolve/list` | `target.session_id` | 可选；与直接资源二选一 | 复用已经装载 Power 设计的命名 session | `--session power_case_01` |
+| `power.resolve/list` | `target.filelist` | source 模式必需 | Verdi `-f` 使用的 RTL filelist；出现该字段即选择 source 模式 | `--target filelist=/data/power/run.f` |
+| `power.resolve/list` | `target.upf` | source 模式必需 | 要装载的 UPF 文件 | `--target upf=/data/power/design.upf` |
+| `power.resolve/list` | `target.workdir` | 可选；默认 filelist 所在目录 | 解析 filelist 相对路径的工作目录 | `--target workdir=/data/power` |
+| `power.resolve/list` | `target.defines` | 可选；字符串或字符串数组 | 逐项映射为 Verdi `+define+...` argv | `--target 'defines=["NOVAS_UPF_PKG","SIM"]'` |
+| `power.resolve/list` | `target.top` | 可选 | 指定 source 模式的顶层 module | `--target top=system` |
+| `power.resolve/list` | `target.upf_version` | 可选；默认 `2.0`；`1.0/2.0` | 决定使用 UPF 1.0 或 2.0 装载参数 | `--target upf_version=2.0` |
+| `language.resolve` | `args.name` | 必需 | 要解析的 Language Model 对象层次名 | `--arg name=top.u_alu` |
+| `language.resolve` | `args.scope` | 可选；默认空 | 名称需要相对解析时给出起始 scope | `--arg scope=top` |
+| `language.iterate` | `args.name` | 必需 | iterator 的参考对象，例如 module instance | `--arg name=top.u_alu` |
+| `language.iterate` | `args.scope` | 可选；默认空 | `name` 的相对解析 scope | `--arg scope=top` |
+| `language.iterate` | `args.object_type` | 必需；必须匹配 `npi*` | 指定从参考对象遍历的 NPI 类型 | `--arg object_type=npiParameter` |
+| `language.iterate` | `limits.max_rows` | 可选；默认 `200` | 限制 iterator 返回条数；响应需检查 `truncated` | `--limit max_rows=200` |
+| `language.relate` | `args.name` | 必需 | 要查询一对一关系的对象；端口会解析为真实 port handle | `--arg name=top.u_alu.result` |
+| `language.relate` | `args.scope` | 可选；默认空 | `name` 的相对解析 scope | `--arg scope=top.u_alu` |
+| `language.relate` | `args.relation_type` | 必需；必须匹配 `npi*` | 一对一 NPI relation，如 high/low connection | `--arg relation_type=npiHighConn` |
+| `language.value` | `args.name` | 必需 | elaborated parameter、localparam 或常量的层次名 | `--arg name=top.u_alu.WIDTH` |
+| `language.value` | `args.scope` | 可选；默认空 | `name` 的相对解析 scope | `--arg scope=top.u_alu` |
+| `language.value` | `args.format` | 可选；默认 `npiHexStrVal` | 选择 NPI value 格式：bin/oct/hex/dec/string/real/int | `--arg format=npiDecStrVal` |
+| `module.find_instances` | `args.definition` | 必需 | module definition 名；返回所有直接和 generate 内例化路径 | `--arg definition=alu` |
+| `module.find_instances` | `limits.max_rows` | 可选；默认 `200` | 限制返回的实例数量 | `--limit max_rows=200` |
+| `module.objects` | `args.module` | 必需 | 要检查的 elaborated module instance 全路径，不是 definition 简名 | `--arg module=top.u_alu` |
+| `module.objects` | `args.kind` | 必需；15 项枚举 | 选择 parameters、ports、io、instances、process 等 getter 类别 | `--arg kind=parameters` |
+| `module.objects` | `limits.max_rows` | 可选；默认 `200` | 限制该类别返回的对象数 | `--limit max_rows=200` |
+| `module.inspect` | `args.module` | 必需 | 要一次汇总检查的 module instance 全路径 | `--arg module=top.u_alu` |
+| `module.inspect` | `args.sections` | 可选；默认 7 个常用 section | 指定要汇总的 `module.objects.kind` 数组 | `--arg 'sections=["instances","parameters","ports","io","nets"]'` |
+| `module.inspect` | `limits.max_rows` | 可选；默认 `200`/section | 对每个 section 分别限制返回条数 | `--limit max_rows=100` |
+| `netlist.resolve` | `args.name` | 必需 | flattened netlist 对象全名 | `--arg name=top.u_dut.ready` |
+| `netlist.resolve` | `args.object_type` | 可选；必须匹配 `npiNl*` | 限定对象类型，避免同名对象歧义 | `--arg object_type=npiNlNet` |
+| `netlist.iterate` | `args.name` | 可选 | iterator 参考对象；省略且类型为 `npiNlInst` 时列 top | `--arg name=top.u_dut` |
+| `netlist.iterate` | `args.object_type` | 必需；必须匹配 `npiNl*` | 指定要遍历的 flattened netlist 类型 | `--arg object_type=npiNlPort` |
+| `netlist.iterate` | `limits.max_rows` | 可选；默认 `200` | 限制遍历结果数量 | `--limit max_rows=200` |
+| `text.line/words/replace_line` | `args.file` | 必需 | 已装载设计中的 RTL 源文件路径 | `--arg file=/data/project/rtl/top.sv` |
+| `text.line/words/replace_line` | `args.line` | 必需；正整数 | 目标源码行号，从 1 开始 | `--arg line=127` |
+| `text.words` | `limits.max_rows` | 可选；默认 `200` | 限制该行返回的 word/TWA 项数 | `--limit max_rows=100` |
+| `text.replace_line` | `args.content` | 必需；字符串 | 替换后的整行文本；有空格时整体引用 | `--arg 'content=  assign ready = valid && enable;'` |
+| `text.replace_line` | `args.output` | 必需；文件路径 | 写入的新 RTL 副本；不能与输入文件相同 | `--arg output=/data/out/top.patched.sv` |
+| `text.replace_line` | `args.overwrite` | 可选；默认 `false` | 是否允许替换已存在的输出副本 | `--arg overwrite=true` |
+| `dm.add_net` | `args.module` | 必需 | 要修改的 DM module 名 | `--arg module=top` |
+| `dm.add_net` | `args.name` | 必需；简单 HDL identifier | 新增 net 的名称 | `--arg name=debug_bus` |
+| `dm.add_net` | `args.net_type` | 可选；默认 `npiDmNetWire` | 新 net 的 NPI DM 类型，必须匹配 `npiDmNet*` | `--arg net_type=npiDmNetWire` |
+| `dm.add_net` | `args.packed_left` | 可选；与 `packed_right` 成对使用 | packed range 左边界 | `--arg packed_left=7` |
+| `dm.add_net` | `args.packed_right` | 可选；与 `packed_left` 成对使用 | packed range 右边界 | `--arg packed_right=0` |
+| `dm.add_net` | `args.output_dir` | 必需；目录路径 | DM writer 导出修改后源码设计的目录 | `--arg output_dir=/data/out/dm_add_net` |
+| `dm.add_net` | `args.overwrite` | 可选；默认 `false` | 是否允许写入已有输出目录 | `--arg overwrite=true` |
+| `dm.clone_module` | `args.module` | 必需 | 要克隆的原 module 名 | `--arg module=alu` |
+| `dm.clone_module` | `args.new_name` | 必需；简单 HDL identifier | 克隆后 module 的新名字 | `--arg new_name=alu_debug` |
+| `dm.clone_module` | `args.output_dir` | 必需；目录路径 | DM writer 输出目录 | `--arg output_dir=/data/out/dm_clone` |
+| `dm.clone_module` | `args.overwrite` | 可选；默认 `false` | 是否允许写入已有输出目录 | `--arg overwrite=true` |
+| `vcs.summary` | `args.database` | 可选；默认 `target.daidir` | 显式覆盖要打开的 VCS model database 路径 | `--arg database=/data/build/simv.daidir` |
+| `power.resolve` | `args.name` | 必需 | 要解析的 power object 全名 | `--arg name=system/PD_TOP` |
+| `power.resolve` | `args.object_type` | 可选；必须匹配 `npiPw*` | 限定 power object 类型 | `--arg object_type=npiPwPowerDomain` |
+| `power.list` | `args.name` | 必需 | power iterator 的参考对象全名 | `--arg name=system/PD_TOP` |
+| `power.list` | `args.object_type` | 必需；必须匹配 `npiPw*` | 要遍历的 power object 类型 | `--arg object_type=npiPwElement` |
+| `power.list` | `limits.max_rows` | 可选；默认 `200` | 限制 power iterator 返回数量 | `--limit max_rows=100` |
+| `crdb.resolve/correlates` | `args.crdb` | 必需；文件/目录路径 | 要打开的 correlation database | `--arg crdb=/data/build/dut.crdb` |
+| `crdb.resolve/correlates` | `args.name` | 必需 | RTL 或 GATE 层对象全名 | `--arg name=top.u_dut.ready` |
+| `crdb.resolve/correlates` | `args.level` | 可选；默认 `RTL`；`RTL/GATE` | 指明输入 `name` 所属层级 | `--arg level=RTL` |
+| `crdb.correlates` | `limits.max_rows` | 可选；默认 `200` | 限制相关对象返回数量 | `--limit max_rows=100` |
+| 两个 writer action | `args.output` | 必需；`.fsdb` 路径 | 新建 FSDB 输出路径 | `--arg output=/data/out/transactions.fsdb` |
+| 两个 writer action | `args.overwrite` | 可选；默认 `false` | 是否允许覆盖已有 FSDB；正式回归建议保持 false | `--arg overwrite=true` |
+| 两个 writer action | `args.unit` | 可选；默认 `1ns` | writer 时间单位 | `--arg unit=1ns` |
+| 两个 writer action | `args.begin_time` | 可选；默认 `0`；非负整数 | FSDB 起始绝对时间，单位由 `unit` 决定 | `--arg begin_time=0` |
+| `transaction.writer.create` | `args.stream` | 必需；非空字符串 | transaction stream 名称 | `--arg stream=bus.requests` |
+| `transaction.writer.create` | `args.transactions` | 必需；非空对象数组 | 按数组顺序声明 transaction；完整 JSON 必须是一个 argv | `--arg 'transactions=[{"start_delta":10,"duration":20,"label":"req0"}]'` |
+| `transaction.writer.create` | `transactions[].start_delta` | 可选；默认 `0`；非负整数 | 相对前一 transaction 结束时间的启动增量 | `"start_delta":10` |
+| `transaction.writer.create` | `transactions[].duration` | 必需；大于 0 | transaction 持续时间 | `"duration":20` |
+| `transaction.writer.create` | `transactions[].type` | 可选；默认 `npiFsdbwTransTransaction` | 必须匹配 `npiFsdbwTrans*` 的 transaction 类型 | `"type":"npiFsdbwTransTransaction"` |
+| `transaction.writer.create` | `transactions[].label` | 可选；默认空 | transaction 的显示标签 | `"label":"req0"` |
+| `transaction.writer.create` | `transactions[].tags` | 可选；默认空数组 | 写入一个或多个非空 tag | `"tags":["read","cacheable"]` |
+| `transaction.writer.create` | `args.relations` | 可选；默认空数组 | 声明 transaction 之间的关系 | `--arg 'relations=[{"relation":"npiFsdbwRelParentChild","master":0,"slave":1}]'` |
+| `transaction.writer.create` | `relations[].relation` | 必需 | NPI transaction relation 枚举 | `"relation":"npiFsdbwRelParentChild"` |
+| `transaction.writer.create` | `relations[].master/slave` | 必需；不同的有效数组下标 | 指向 `transactions[]` 中关系两端 | `"master":0,"slave":1` |
+| `fsdb.writer.create_scope` | `args.end_time_delta` | 可选；默认 `0`；非负整数 | 相对 begin time 的结束增量 | `--arg end_time_delta=100` |
+| `fsdb.writer.create_scope` | `args.operations` | 与 `scopes` 二选一；非空数组 | 按顺序执行 `scope/up`，可表达兄弟和多层层次 | `--arg 'operations=[{"op":"scope","name":"top"},{"op":"scope","name":"u_a"},{"op":"up"}]'` |
+| `fsdb.writer.create_scope` | `operations[].op` | 可选；默认 `scope`；`scope/up` | `scope` 进入新层次，`up` 返回父层；不能越过根 | `"op":"up"` |
+| `fsdb.writer.create_scope` | `operations[].type` | `op=scope` 时可选；默认 SV module | 必须匹配 `npiFsdbScope*` 的 scope 类型 | `"type":"npiFsdbScopeSvModule"` |
+| `fsdb.writer.create_scope` | `operations[].name` | `op=scope` 时必需 | 新 scope 的局部名 | `"name":"u_alu"` |
+| `fsdb.writer.create_scope` | `operations[].def_name` | 可选；默认空 | 新 scope 的 definition 名 | `"def_name":"alu"` |
+| `fsdb.writer.create_scope` | `args.scopes` | 与 `operations` 二选一；非空数组 | 简单线性嵌套写法；每项等价于一个 `scope` operation | `--arg 'scopes=[{"name":"top"},{"name":"u_alu","def_name":"alu"}]'` |
+| `fsdb.writer.create_scope` | `scopes[].type` | 可选；默认 SV module | 简写 scope 的 `npiFsdbScope*` 类型 | `"type":"npiFsdbScopeSvModule"` |
+| `fsdb.writer.create_scope` | `scopes[].name` | 必需 | 简写 scope 的局部名 | `"name":"u_alu"` |
+| `fsdb.writer.create_scope` | `scopes[].def_name` | 可选；默认空 | 简写 scope 的 definition 名 | `"def_name":"alu"` |
+
+`npi.capabilities` 没有业务 `args`；对它有实际意义的是通用输出选择。所有 NPI action 都可使用
+10.2 “全部快捷参数”表中的 `--json/--text/--kout` 和 `--output KEY=VALUE`。只有上表明确
+列出 `limits.max_rows` 的 iterator/list action 才消费该条数限制；不要因为 envelope 接受
+`--limit` 就假定任意 action 都会使用它。
+不要把上表中的 `args.output`（writer 目标文件）误写为 CLI 的 `--output KEY=VALUE`
+（response 输出配置）；前者必须写成 `--arg output=/path/file.fsdb`。
+
 固定属性是有意的：二次开发者不能把任意 NPI property 或 Tcl 片段塞进 action。这样可以
 稳定 schema、限制输出规模，并避免把项目字符串变成 `eval`。确实需要新属性时，应新增并
 评审字段，而不是增加 `property=<任意枚举>` 后门。
+
+`module.objects.kind` 覆盖手册 Module Library 的全部 15 类 getter。dump 版本没有再单列
+action，因为 JSON object 已经包含 dump 的文件、行号和对象信息，而且更适合脚本解析。
+
+| `kind` | 对应 Tcl NPI | 查询对象 | 推荐 `module` 示例 |
+| --- | --- | --- | --- |
+| `continuous_assignments` | `npi_mod_inst_get_cont_assign` | 连续赋值 | `top.u_alu` |
+| `functions` | `npi_mod_inst_get_func` | function | `top.u_alu` |
+| `generate_scopes` | `npi_mod_inst_get_gen_scope` | generate scope | `top` |
+| `instances` | `npi_mod_inst_get_instance` | 非 generate 直接子例化 | `top` |
+| `instances_in_generate` | `npi_mod_inst_get_instance_in_gen_scope` | generate 内例化 | `top` |
+| `io` | `npi_mod_inst_get_io` | input/output/inout 声明 | `top.u_alu` |
+| `language_interfaces` | `npi_mod_inst_get_lang_interface` | SV/VHDL 等混合语言边界 | `top` |
+| `nets` | `npi_mod_inst_get_net` | wire/net | `top.u_alu` |
+| `parameters` | `npi_mod_inst_get_parameter` | parameter/localparam 及实例有效值 | `top.u_alu` |
+| `ports` | `npi_mod_inst_get_port` | 有序 port、方向、high/low connection | `top.u_alu` |
+| `primitives` | `npi_mod_inst_get_primitive` | gate/UDP primitive | `top` |
+| `always_processes` | `npi_mod_inst_get_process_always` | always/always_comb/always_ff 等过程 | `top.u_alu` |
+| `initial_processes` | `npi_mod_inst_get_process_init` | initial 过程 | `top` |
+| `tasks` | `npi_mod_inst_get_task` | task | `top` |
+| `variables` | `npi_mod_inst_get_var` | reg/logic/variable | `top.u_alu` |
+
+每个 `items[]` 都使用统一对象字段，调用脚本不需要为不同 getter 维护 15 套 parser。
+
+| JSON 字段 | 含义 | 典型值/说明 |
+| --- | --- | --- |
+| `object.name/full_name/type` | 局部名、层次名、NPI object type；Verdi 对 port 不返回 full name 时由已知 module 上下文补齐 | `WIDTH`、`top.u_alu.WIDTH`、`npiParameter` |
+| `object.parent_module` | `module.objects/inspect` 查询所使用的实例路径 | `top.u_alu` |
+| `object.def_name` | 例化对象的 definition 名 | `alu` |
+| `object.file/line` | 当前对象源码位置 | `/data/rtl/alu.sv`、`42` |
+| `object.def_file/def_line` | definition 源码位置 | module 定义文件和行号 |
+| `object.size/signed` | 位宽和有符号属性 | `12`、`0/1` |
+| `object.direction` | port/IO 方向 | `npiInput`、`npiOutput`、`npiInout` |
+| `object.port_index/port_type` | 端口顺序和类型 | `0`、`npiPort` |
+| `object.const_type/local_param` | 常量类型和 localparam 标志 | `npiDecConst`、`1` |
+| `object.net_type` | net 类型 | `npiWire` |
+| `object.decompiled` | 可用时的表达式反编译文本 | `WIDTH` |
+| `values.bin/oct/hex/dec/string/real/int` | NPI `npi_get_value` 的各格式；不支持的格式为 null | 参数覆盖后 `dec="12"` |
+| `connections.high/low` | port 上层实际连接与实例内部低侧对象 | `top.lhs`、`top.u_alu.lhs` |
 
 Power action 支持两种设计输入。已有 VCS Power database 时使用 `--daidir`；只有 RTL 和
 UPF 时使用下面的受控 source target。source target 由 Python 转成 Verdi argv，不会拼 shell，
@@ -1039,6 +1216,28 @@ KDEBUG=/home/host/kverif/tools/kdebug
 DAIDIR=/data/build/simv.daidir
 
 "$KDEBUG" --json action npi.capabilities
+
+"$KDEBUG" --json action language.resolve --daidir "$DAIDIR" \
+  --arg name=top.u_alu
+
+"$KDEBUG" --json action language.iterate --daidir "$DAIDIR" \
+  --arg name=top.u_alu --arg object_type=npiParameter --limit max_rows=200
+
+"$KDEBUG" --json action language.relate --daidir "$DAIDIR" \
+  --arg name=top.u_alu.result --arg relation_type=npiHighConn
+
+"$KDEBUG" --json action language.value --daidir "$DAIDIR" \
+  --arg name=top.u_alu.WIDTH --arg format=npiDecStrVal
+
+"$KDEBUG" --json action module.find_instances --daidir "$DAIDIR" \
+  --arg definition=alu --limit max_rows=200
+
+"$KDEBUG" --json action module.objects --daidir "$DAIDIR" \
+  --arg module=top.u_alu --arg kind=ports --limit max_rows=200
+
+"$KDEBUG" --json action module.inspect --daidir "$DAIDIR" \
+  --arg module=top.u_alu \
+  --arg 'sections=["instances","parameters","ports","io","nets","variables"]'
 
 "$KDEBUG" --json action netlist.resolve --daidir "$DAIDIR" \
   --arg name=top.u_dut.ready --arg object_type=npiNlNet
@@ -1087,11 +1286,13 @@ KDebug 返回 `LICENSE_UNAVAILABLE`，项目脚本应把它归入 EDA 基础设�
 `POWER_OBJECT_NOT_FOUND` 或业务失败。VM `192.168.31.116` 当前缺少
 `PowerAwareAnalysis` feature，因此 Power 两项已经真实启动和加载 RTL+UPF，但没有被标成 PASS。
 
-2026-07-24 的 Verdi O-2018.09-SP2 普通用户实测结果如下。原始机器结果位于
+2026-07-28 的 Verdi O-2018.09-SP2 普通用户实测结果如下。原始机器结果位于
 `kdebug/tests/vm/npi_actions/evidence/`。
 
 | 状态 | action |
 | --- | --- |
+| PASS | `language.resolve`、`language.iterate`、`language.relate`、`language.value` |
+| PASS | `module.find_instances`、`module.inspect`、`module.objects` 全部 15 个 kind |
 | PASS | `npi.capabilities`、`netlist.resolve`、`netlist.iterate` |
 | PASS | `text.line`、`text.words`、`text.replace_line` |
 | PASS | `dm.add_net`、`dm.clone_module`、`vcs.summary` |
@@ -1967,11 +2168,13 @@ bash /home/host/kverif/kdebug/tests/vm/npi_actions/run.sh \
 harness 会执行以下真实步骤：
 
 1. 用 VCS 2018 构建带 `-kdb -Xdump_vcsdb` 的最小设计数据库。
-2. 通过公共 KDebug CLI 执行 Netlist、Text、DM 和 VCS action。
-3. 创建 transaction FSDB 和 scope hierarchy FSDB，并验证重复输出保护。
-4. 用 Verdi source mode 加载安装目录中的 RTL+UPF demo，执行两个 Power action。
-5. 用 `crdb` 创建真实 RTL/GATE correlation database，要求至少返回一个 mapping。
-6. 校验所有输出非空并写机器可读 summary。
+2. 通过公共 KDebug CLI 执行 Language Model action 和 Module Library 全部 15 类 getter。
+3. 断言 definition 例化、generate 例化、有效参数/localparam、IO、端口方向及 high/low connection。
+4. 执行 Netlist、Text、DM 和 VCS action。
+5. 创建 transaction FSDB 和 scope hierarchy FSDB，并验证重复输出保护。
+6. 用 Verdi source mode 加载安装目录中的 RTL+UPF demo，执行两个 Power action。
+7. 用 `crdb` 创建真实 RTL/GATE correlation database，要求至少返回一个 mapping。
+8. 校验所有输出非空并写机器可读 summary。
 
 当前 VM 的期望结果为 `passed=true`、`unexpected_failures=[]`，同时
 `license_blocked_actions=["power.list","power.resolve"]`。以后许可证补齐后，这两个 action
@@ -2016,3 +2219,5 @@ harness 会执行以下真实步骤：
 - [kdebug action 示例](../skill/references/kdebug/examples.md)
 - [kcov 使用说明](../kcov/README.md)
 - [keda-runner 使用说明](../keda_runner/README.md)
+- [NPI 规范化能力矩阵](npi_functional_coverage.md)
+- [NPI 手册逐 API 覆盖清单](npi_api_inventory.md)

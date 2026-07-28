@@ -61,6 +61,13 @@ example 和 contract test 迁移使用。状态定义：
 | `port.trace` | design | stable | design | design engine forward | partial |
 | `instance.map` | design | stable | design | design engine forward | partial |
 | `interface.resolve` | design | stable | design | design engine forward | partial |
+| `language.resolve` | design | experimental | design | Tcl NPI Language Model object lookup and fixed property snapshot | VM PASS 2026-07-28 |
+| `language.iterate` | design | experimental | design | Tcl NPI Language Model typed iterator | VM PASS 2026-07-28 |
+| `language.relate` | design | experimental | design | Tcl NPI Language Model one-to-one relationship lookup | VM PASS 2026-07-28 |
+| `language.value` | design | experimental | design | Tcl NPI Language Model elaborated constant/parameter value | VM PASS 2026-07-28 |
+| `module.objects` | design | experimental | design | Tcl NPI Module Library 15-kind object inventory | VM PASS all 15 kinds 2026-07-28 |
+| `module.find_instances` | design | experimental | design | Tcl NPI module-definition to instance lookup | VM PASS 2026-07-28 |
+| `module.inspect` | design | experimental | design | Tcl NPI aggregate instance/parameter/port/IO/connectivity inspection | VM PASS 2026-07-28 |
 | `netlist.resolve` | design | experimental | design | Tcl NPI Netlist Model lookup | VM PASS 2026-07-24 |
 | `netlist.iterate` | design | experimental | design | Tcl NPI Netlist Model iterator | VM PASS 2026-07-24 |
 | `text.line` | design | experimental | design | Tcl NPI Text Model line lookup | VM PASS 2026-07-24 |

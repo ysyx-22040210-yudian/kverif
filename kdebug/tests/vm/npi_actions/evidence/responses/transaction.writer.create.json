@@ -8,14 +8,14 @@
   },
   "session": null,
   "summary": {
-    "output": "/home/host/kverif_npi_action_test/transactions.fsdb",
+    "output": "/home/host/kverif_npi_action_test_20260728_full/transactions.fsdb",
     "stream": "bus.requests",
     "transaction_count": 2,
     "relation_count": 1,
     "status": "written"
   },
   "data": {
-    "output": "/home/host/kverif_npi_action_test/transactions.fsdb",
+    "output": "/home/host/kverif_npi_action_test_20260728_full/transactions.fsdb",
     "unit": "1ns",
     "begin_time": 0,
     "end_time": 45,
@@ -23,7 +23,7 @@
     "transaction_count": 2,
     "relation_count": 1,
     "summary": {
-      "output": "/home/host/kverif_npi_action_test/transactions.fsdb",
+      "output": "/home/host/kverif_npi_action_test_20260728_full/transactions.fsdb",
       "stream": "bus.requests",
       "transaction_count": 2,
       "relation_count": 1,

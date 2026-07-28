@@ -14,12 +14,12 @@
   "warnings": [],
   "error": {
     "code": "OUTPUT_EXISTS",
-    "message": "output already exists; set args.overwrite=true to replace it: /home/host/kverif_npi_action_test/hierarchy.fsdb",
+    "message": "output already exists; set args.overwrite=true to replace it: /home/host/kverif_npi_action_test_20260728_full/hierarchy.fsdb",
     "recoverable": true,
     "candidates": [],
     "suggested_actions": [],
     "details": {
-      "stdout": "logDir = /tmp/kdebug-tcl-npi-_dvekup_/verdiLog\n\nVerdi (R)\n\nRelease Verdi_O-2018.09-SP2 for (RH Linux x86_64/64bit) -- Thu Feb 21 04:40:56 PDT 2019\n\nCopyright (c) 1999 - 2019 Synopsys, Inc.\nThis software and the associated documentation are proprietary to Synopsys, Inc. \nThis software may only be used in accordance with the terms and conditions of a written license agreement with Synopsys, Inc. \nAll other use, reproduction, or distribution of this software is strictly prohibited.\n\nrcfile = /home/host/novas.rc\n*WARN* Cannot open /tmp/kdebug-tcl-npi-_dvekup_/novas.conf for read access. No such file or directory\nguiConfFile (read)= /home/host/novas.conf ($HOME directory)\nguiConfFile (write)= /tmp/kdebug-tcl-npi-_dvekup_/novas.conf (working directory)\n",
+      "stdout": "logDir = /tmp/kdebug-tcl-npi-mcclhawc/verdiLog\n\nVerdi (R)\n\nRelease Verdi_O-2018.09-SP2 for (RH Linux x86_64/64bit) -- Thu Feb 21 04:40:56 PDT 2019\n\nCopyright (c) 1999 - 2019 Synopsys, Inc.\nThis software and the associated documentation are proprietary to Synopsys, Inc. \nThis software may only be used in accordance with the terms and conditions of a written license agreement with Synopsys, Inc. \nAll other use, reproduction, or distribution of this software is strictly prohibited.\n\nrcfile = /home/host/novas.rc\n*WARN* Cannot open /tmp/kdebug-tcl-npi-mcclhawc/novas.conf for read access. No such file or directory\nguiConfFile (read)= /home/host/novas.conf ($HOME directory)\nguiConfFile (write)= /tmp/kdebug-tcl-npi-mcclhawc/novas.conf (working directory)\n",
       "stderr": ""
     }
   },
@@ -29,12 +29,12 @@
   "details": {
     "error": {
       "code": "OUTPUT_EXISTS",
-      "message": "output already exists; set args.overwrite=true to replace it: /home/host/kverif_npi_action_test/hierarchy.fsdb",
+      "message": "output already exists; set args.overwrite=true to replace it: /home/host/kverif_npi_action_test_20260728_full/hierarchy.fsdb",
       "recoverable": true,
       "candidates": [],
       "suggested_actions": [],
       "details": {
-        "stdout": "logDir = /tmp/kdebug-tcl-npi-_dvekup_/verdiLog\n\nVerdi (R)\n\nRelease Verdi_O-2018.09-SP2 for (RH Linux x86_64/64bit) -- Thu Feb 21 04:40:56 PDT 2019\n\nCopyright (c) 1999 - 2019 Synopsys, Inc.\nThis software and the associated documentation are proprietary to Synopsys, Inc. \nThis software may only be used in accordance with the terms and conditions of a written license agreement with Synopsys, Inc. \nAll other use, reproduction, or distribution of this software is strictly prohibited.\n\nrcfile = /home/host/novas.rc\n*WARN* Cannot open /tmp/kdebug-tcl-npi-_dvekup_/novas.conf for read access. No such file or directory\nguiConfFile (read)= /home/host/novas.conf ($HOME directory)\nguiConfFile (write)= /tmp/kdebug-tcl-npi-_dvekup_/novas.conf (working directory)\n",
+        "stdout": "logDir = /tmp/kdebug-tcl-npi-mcclhawc/verdiLog\n\nVerdi (R)\n\nRelease Verdi_O-2018.09-SP2 for (RH Linux x86_64/64bit) -- Thu Feb 21 04:40:56 PDT 2019\n\nCopyright (c) 1999 - 2019 Synopsys, Inc.\nThis software and the associated documentation are proprietary to Synopsys, Inc. \nThis software may only be used in accordance with the terms and conditions of a written license agreement with Synopsys, Inc. \nAll other use, reproduction, or distribution of this software is strictly prohibited.\n\nrcfile = /home/host/novas.rc\n*WARN* Cannot open /tmp/kdebug-tcl-npi-mcclhawc/novas.conf for read access. No such file or directory\nguiConfFile (read)= /home/host/novas.conf ($HOME directory)\nguiConfFile (write)= /tmp/kdebug-tcl-npi-mcclhawc/novas.conf (working directory)\n",
         "stderr": ""
       }
     }

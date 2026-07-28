@@ -10,7 +10,7 @@
   "summary": {
     "module": "npi_fixture_top",
     "name": "debug_bus",
-    "output_dir": "/home/host/kverif_npi_action_test/design/dm-add-net",
+    "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-add-net",
     "status": "written"
   },
   "data": {
@@ -19,11 +19,11 @@
     "net_type": "npiDmNetWire",
     "packed_left": 7,
     "packed_right": 0,
-    "output_dir": "/home/host/kverif_npi_action_test/design/dm-add-net",
+    "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-add-net",
     "summary": {
       "module": "npi_fixture_top",
       "name": "debug_bus",
-      "output_dir": "/home/host/kverif_npi_action_test/design/dm-add-net",
+      "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-add-net",
       "status": "written"
     },
     "verdi": {

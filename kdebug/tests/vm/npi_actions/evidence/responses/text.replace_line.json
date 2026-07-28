@@ -8,22 +8,22 @@
   },
   "session": null,
   "summary": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "output": "/home/host/kverif_npi_action_test/design/design.patched.sv",
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "output": "/home/host/kverif_npi_action_test_20260728_full/design/design.patched.sv",
     "status": "written"
   },
   "data": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "full_name": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "original": "    result = lhs + rhs;\n",
-    "replacement": "    result = lhs - rhs;",
-    "output": "/home/host/kverif_npi_action_test/design/design.patched.sv",
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "full_name": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "original": "    sum = add_with_bias(lhs, rhs);\n",
+    "replacement": "    sum = lhs - rhs;",
+    "output": "/home/host/kverif_npi_action_test_20260728_full/design/design.patched.sv",
     "summary": {
-      "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-      "line": 7,
-      "output": "/home/host/kverif_npi_action_test/design/design.patched.sv",
+      "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+      "line": 27,
+      "output": "/home/host/kverif_npi_action_test_20260728_full/design/design.patched.sv",
       "status": "written"
     },
     "verdi": {

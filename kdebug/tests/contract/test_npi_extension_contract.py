@@ -11,6 +11,13 @@ import pytest
 
 NEW_NPI_ACTIONS = {
     "npi.capabilities",
+    "language.resolve",
+    "language.iterate",
+    "language.relate",
+    "language.value",
+    "module.objects",
+    "module.find_instances",
+    "module.inspect",
     "netlist.resolve",
     "netlist.iterate",
     "text.line",
@@ -25,6 +32,25 @@ NEW_NPI_ACTIONS = {
     "crdb.correlates",
     "transaction.writer.create",
     "fsdb.writer.create_scope",
+}
+
+
+MODULE_OBJECT_KINDS = {
+    "continuous_assignments": "npi_mod_inst_get_cont_assign",
+    "functions": "npi_mod_inst_get_func",
+    "generate_scopes": "npi_mod_inst_get_gen_scope",
+    "instances": "npi_mod_inst_get_instance",
+    "instances_in_generate": "npi_mod_inst_get_instance_in_gen_scope",
+    "io": "npi_mod_inst_get_io",
+    "language_interfaces": "npi_mod_inst_get_lang_interface",
+    "nets": "npi_mod_inst_get_net",
+    "parameters": "npi_mod_inst_get_parameter",
+    "ports": "npi_mod_inst_get_port",
+    "primitives": "npi_mod_inst_get_primitive",
+    "always_processes": "npi_mod_inst_get_process_always",
+    "initial_processes": "npi_mod_inst_get_process_init",
+    "tasks": "npi_mod_inst_get_task",
+    "variables": "npi_mod_inst_get_var",
 }
 
 
@@ -43,6 +69,16 @@ def test_new_actions_have_explicit_tcl_dispatch(kdebug_root: Path) -> None:
     for action in NEW_NPI_ACTIONS:
         assert '$action eq "%s"' % action in script
     assert "eval " not in script
+
+
+@pytest.mark.contract
+def test_module_action_maps_every_documented_module_getter(kdebug_root: Path) -> None:
+    script = (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").read_text(
+        encoding="utf-8"
+    )
+    for kind, command in MODULE_OBJECT_KINDS.items():
+        assert f"{kind} {{return ::npi_L1::{command}}}" in script
+    assert "::npi_L1::npi_mod_define_get_inst" in script
 
 
 @pytest.mark.contract
@@ -213,7 +249,7 @@ def test_archived_vm_responses_match_action_schemas(kdebug_root: Path) -> None:
     assert summary["license_blocked_actions"] == ["power.list", "power.resolve"]
 
     response_paths = sorted((evidence / "responses").glob("*.json"))
-    assert len(response_paths) == 17
+    assert len(response_paths) == 38
     for response_path in response_paths:
         response = json.loads(response_path.read_text(encoding="utf-8"))
         action = response["action"]
@@ -222,3 +258,44 @@ def test_archived_vm_responses_match_action_schemas(kdebug_root: Path) -> None:
         )
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator(schema).validate(response)
+
+
+@pytest.mark.contract
+def test_archived_vm_module_evidence_contains_elaborated_facts(
+    kdebug_root: Path,
+) -> None:
+    responses = kdebug_root / "tests" / "vm" / "npi_actions" / "evidence" / "responses"
+
+    instances = json.loads(
+        (responses / "module.find_instances.json").read_text(encoding="utf-8")
+    )["data"]["instances"]
+    assert any(
+        row["object"]["full_name"] == "npi_fixture_top.u_alu" for row in instances
+    )
+
+    parameters = json.loads(
+        (responses / "module.objects.parameters.json").read_text(encoding="utf-8")
+    )["data"]["items"]
+    by_name = {row["object"]["name"]: row for row in parameters}
+    assert by_name["WIDTH"]["values"]["dec"] == "12"
+    assert by_name["BIAS"]["values"]["dec"] == "1"
+    assert by_name["RESULT_WIDTH"]["object"]["local_param"] == 1
+    assert by_name["RESULT_WIDTH"]["values"]["dec"] == "12"
+
+    ports = json.loads(
+        (responses / "module.objects.ports.json").read_text(encoding="utf-8")
+    )["data"]["items"]
+    directions = {row["object"]["name"]: row["object"]["direction"] for row in ports}
+    assert directions == {"lhs": "npiInput", "rhs": "npiInput", "result": "npiOutput"}
+    for row in ports:
+        assert row["object"]["parent_module"] == "npi_fixture_top.u_alu"
+        assert row["object"]["full_name"] == "npi_fixture_top.u_alu.%s" % row["object"]["name"]
+        assert row["connections"]["high"]["full_name"]
+        assert row["connections"]["low"]["full_name"]
+
+    for kind in MODULE_OBJECT_KINDS:
+        response = json.loads(
+            (responses / ("module.objects.%s.json" % kind)).read_text(encoding="utf-8")
+        )
+        assert response["ok"] is True
+        assert response["data"]["kind"] == kind

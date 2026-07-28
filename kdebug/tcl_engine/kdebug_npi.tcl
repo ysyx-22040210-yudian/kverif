@@ -156,6 +156,449 @@ proc handle_json {hdl} {
     return [json_object $pairs]
 }
 
+proc safe_language_get {hdl prop} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_get -property $prop -object $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq ""} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc safe_language_value {hdl format} {
+    if {$hdl eq ""} {return "__JSON_NULL__"}
+    if {[catch {npi_get_value -format $format -object $hdl} value]} {return "__JSON_NULL__"}
+    if {$value eq "NPI_GET_VALUE_ERROR_STR"} {return "__JSON_NULL__"}
+    return $value
+}
+
+proc language_basic_json {hdl {parent_module ""}} {
+    set object_name [safe_get_str $hdl npiName]
+    set full_name [safe_get_str $hdl npiFullName]
+    if {$full_name eq "" && $parent_module ne "" && $object_name ne ""} {
+        set full_name "$parent_module.$object_name"
+    }
+    return [json_object_raw [list \
+        handle [json_string $hdl] \
+        name [json_string $object_name] \
+        full_name [json_string $full_name] \
+        parent_module [json_string $parent_module] \
+        type [json_string [safe_get_str $hdl npiType]] \
+        def_name [json_string [safe_get_str $hdl npiDefName]] \
+        file [json_string [safe_get_str $hdl npiFile]] \
+        def_file [json_string [safe_get_str $hdl npiDefFile]] \
+        line [json_value [safe_language_get $hdl npiLineNo]] \
+        def_line [json_value [safe_language_get $hdl npiDefLineNo]] \
+        size [json_value [safe_language_get $hdl npiSize]] \
+        direction [json_string [safe_get_str $hdl npiDirection]] \
+        port_index [json_value [safe_language_get $hdl npiPortIndex]] \
+        port_type [json_string [safe_get_str $hdl npiPortType]] \
+        const_type [json_string [safe_get_str $hdl npiConstType]] \
+        net_type [json_string [safe_get_str $hdl npiNetType]] \
+        local_param [json_value [safe_language_get $hdl npiLocalParam]] \
+        signed [json_value [safe_language_get $hdl npiSigned]] \
+        automatic [json_value [safe_language_get $hdl npiAutomatic]] \
+        top [json_value [safe_language_get $hdl npiTop]] \
+        cell_instance [json_value [safe_language_get $hdl npiCellInstance]] \
+        decompiled [json_string [safe_expr_decompile $hdl]]]]
+}
+
+proc language_values_json {hdl} {
+    set pairs {}
+    foreach {name format} {
+        bin npiBinStrVal
+        oct npiOctStrVal
+        hex npiHexStrVal
+        dec npiDecStrVal
+        string npiStringVal
+        real npiRealVal
+        int npiIntVal
+    } {
+        set value [safe_language_value $hdl $format]
+        if {$value eq "__JSON_NULL__"} {
+            lappend pairs $name null
+        } else {
+            lappend pairs $name [json_string $value]
+        }
+    }
+    return [json_object_raw $pairs]
+}
+
+proc language_relation_json {hdl relation_type} {
+    if {[catch {npi_handle -type $relation_type -refHandle $hdl} related] || $related eq ""} {
+        return "null"
+    }
+    set result [language_basic_json $related]
+    catch {npi_release_handle -object $related}
+    return $result
+}
+
+proc language_object_json {hdl include_value include_connections {parent_module ""}} {
+    set basic [language_basic_json $hdl $parent_module]
+    set pairs [list object $basic]
+    if {$include_value} {
+        lappend pairs values [language_values_json $hdl]
+    }
+    if {$include_connections} {
+        lappend pairs connections [json_object_raw [list \
+            high [language_relation_json $hdl npiHighConn] \
+            low [language_relation_json $hdl npiLowConn]]]
+    }
+    return [json_object_raw $pairs]
+}
+
+proc resolve_language_handle {name scope} {
+    if {$scope eq ""} {
+        return [npi_handle_by_name -name $name -scope ""]
+    }
+    return [npi_handle_by_name -name $name -scope $scope]
+}
+
+proc resolve_module_port_handle {name scope} {
+    set full_name $name
+    if {$scope ne "" && [string first "." $name] < 0} {
+        set full_name "$scope.$name"
+    }
+    if {![regexp {^(.+)\.([^.]+)$} $full_name -> module_name port_name]} {
+        return ""
+    }
+    set command ::npi_L1::npi_mod_inst_get_port
+    if {![command_available $command]} {return ""}
+    set handles {}
+    if {[catch [list $command $module_name handles] count] || $count <= 0} {
+        return ""
+    }
+    set matched ""
+    foreach hdl $handles {
+        if {$matched eq "" && [safe_get_str $hdl npiName] eq $port_name} {
+            set matched $hdl
+        } else {
+            catch {npi_release_handle -object $hdl}
+        }
+    }
+    return $matched
+}
+
+proc language_resolve_action {name scope} {
+    if {$name eq ""} {
+        fail_data "MISSING_FIELD" "args.name is required"
+        return
+    }
+    foreach command {npi_handle_by_name npi_get npi_get_str npi_get_value} {
+        if {![require_command $command]} {return}
+    }
+    set hdl [resolve_language_handle $name $scope]
+    if {$hdl eq ""} {
+        fail_data "LANGUAGE_OBJECT_NOT_FOUND" "language object not found: $name"
+        return
+    }
+    set object [language_object_json $hdl 1 1]
+    catch {npi_release_handle -object $hdl}
+    ok_data [list \
+        query [json_string $name] \
+        scope [json_string $scope] \
+        object $object \
+        summary [json_object [list name $name scope $scope status resolved]]]
+}
+
+proc language_iterate_action {name scope object_type max_rows} {
+    if {$name eq "" || $object_type eq ""} {
+        fail_data "MISSING_FIELD" "args.name and args.object_type are required"
+        return
+    }
+    if {![valid_npi_enum $object_type npi]} {
+        fail_data "INVALID_ENUM" "args.object_type must be an npi* enum"
+        return
+    }
+    foreach command {npi_handle_by_name npi_iterate npi_scan} {
+        if {![require_command $command]} {return}
+    }
+    set ref [resolve_language_handle $name $scope]
+    if {$ref eq ""} {
+        fail_data "LANGUAGE_OBJECT_NOT_FOUND" "language reference object not found: $name"
+        return
+    }
+    set iter [npi_iterate -type $object_type -refHandle $ref]
+    set rows {}
+    set limit [positive_limit $max_rows 200]
+    set truncated 0
+    if {$iter ne ""} {
+        while {1} {
+            set child [npi_scan -iterator $iter]
+            if {$child eq ""} {break}
+            if {[llength $rows] >= $limit} {
+                set truncated 1
+                catch {npi_release_handle -object $child}
+                break
+            }
+            lappend rows [language_object_json $child 1 [expr {$object_type eq "npiPort"}]]
+            catch {npi_release_handle -object $child}
+        }
+    }
+    if {$truncated && $iter ne ""} {catch {npi_release_handle -object $iter}}
+    catch {npi_release_handle -object $ref}
+    ok_data [list \
+        reference [json_string $name] \
+        scope [json_string $scope] \
+        object_type [json_string $object_type] \
+        count [llength $rows] \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        items [json_array_raw $rows] \
+        summary [json_object [list reference $name object_type $object_type count [llength $rows] truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc language_relate_action {name scope relation_type} {
+    if {$name eq "" || $relation_type eq ""} {
+        fail_data "MISSING_FIELD" "args.name and args.relation_type are required"
+        return
+    }
+    if {![valid_npi_enum $relation_type npi]} {
+        fail_data "INVALID_ENUM" "args.relation_type must be an npi* enum"
+        return
+    }
+    foreach command {npi_handle_by_name npi_handle} {
+        if {![require_command $command]} {return}
+    }
+    set ref [resolve_language_handle $name $scope]
+    if {$ref eq ""} {
+        fail_data "LANGUAGE_OBJECT_NOT_FOUND" "language source object not found: $name"
+        return
+    }
+    set related [npi_handle -type $relation_type -refHandle $ref]
+    if {$related eq "" && $relation_type in {npiHighConn npiLowConn}} {
+        catch {npi_release_handle -object $ref}
+        set ref [resolve_module_port_handle $name $scope]
+        if {$ref ne ""} {
+            set related [npi_handle -type $relation_type -refHandle $ref]
+        }
+    }
+    if {$related eq ""} {
+        if {$ref ne ""} {catch {npi_release_handle -object $ref}}
+        fail_data "LANGUAGE_RELATION_NOT_FOUND" "relationship $relation_type is not available for $name"
+        return
+    }
+    set object [language_object_json $related 1 [expr {$relation_type in {npiPort npiHighConn npiLowConn}}]]
+    catch {npi_release_handle -object $related}
+    catch {npi_release_handle -object $ref}
+    ok_data [list \
+        source [json_string $name] \
+        relation_type [json_string $relation_type] \
+        object $object \
+        summary [json_object [list source $name relation_type $relation_type status resolved]]]
+}
+
+proc language_value_action {name scope format} {
+    if {$name eq ""} {
+        fail_data "MISSING_FIELD" "args.name is required"
+        return
+    }
+    if {$format eq ""} {set format npiHexStrVal}
+    if {$format ni {npiBinStrVal npiOctStrVal npiHexStrVal npiDecStrVal npiStringVal npiRealVal npiIntVal}} {
+        fail_data "INVALID_ENUM" "args.format is not a supported NPI value format"
+        return
+    }
+    foreach command {npi_handle_by_name npi_get_value} {
+        if {![require_command $command]} {return}
+    }
+    set hdl [resolve_language_handle $name $scope]
+    if {$hdl eq ""} {
+        fail_data "LANGUAGE_OBJECT_NOT_FOUND" "language object not found: $name"
+        return
+    }
+    set value [safe_language_value $hdl $format]
+    if {$value eq "__JSON_NULL__"} {
+        catch {npi_release_handle -object $hdl}
+        fail_data "VALUE_UNAVAILABLE" "object does not support $format: $name"
+        return
+    }
+    set size [safe_language_get $hdl npiSize]
+    set signed [safe_language_get $hdl npiSigned]
+    set type [safe_get_str $hdl npiType]
+    catch {npi_release_handle -object $hdl}
+    ok_data [list \
+        name [json_string $name] \
+        type [json_string $type] \
+        format [json_string $format] \
+        value [json_string $value] \
+        size [json_value $size] \
+        signed [json_value $signed] \
+        summary [json_object [list name $name format $format status ok]]]
+}
+
+proc module_kind_command {kind} {
+    switch -- $kind {
+        continuous_assignments {return ::npi_L1::npi_mod_inst_get_cont_assign}
+        functions {return ::npi_L1::npi_mod_inst_get_func}
+        generate_scopes {return ::npi_L1::npi_mod_inst_get_gen_scope}
+        instances {return ::npi_L1::npi_mod_inst_get_instance}
+        instances_in_generate {return ::npi_L1::npi_mod_inst_get_instance_in_gen_scope}
+        io {return ::npi_L1::npi_mod_inst_get_io}
+        language_interfaces {return ::npi_L1::npi_mod_inst_get_lang_interface}
+        nets {return ::npi_L1::npi_mod_inst_get_net}
+        parameters {return ::npi_L1::npi_mod_inst_get_parameter}
+        ports {return ::npi_L1::npi_mod_inst_get_port}
+        primitives {return ::npi_L1::npi_mod_inst_get_primitive}
+        always_processes {return ::npi_L1::npi_mod_inst_get_process_always}
+        initial_processes {return ::npi_L1::npi_mod_inst_get_process_init}
+        tasks {return ::npi_L1::npi_mod_inst_get_task}
+        variables {return ::npi_L1::npi_mod_inst_get_var}
+        default {return ""}
+    }
+}
+
+proc module_section_json {module kind max_rows total_var returned_var truncated_var error_var} {
+    upvar 1 $total_var total
+    upvar 1 $returned_var returned
+    upvar 1 $truncated_var truncated
+    upvar 1 $error_var error_message
+    set total 0
+    set returned 0
+    set truncated 0
+    set error_message ""
+    set command [module_kind_command $kind]
+    if {$command eq ""} {
+        set error_message "unsupported module object kind: $kind"
+        return "[]"
+    }
+    if {![command_available $command]} {
+        set error_message "NPI command is unavailable in this Verdi runtime: $command"
+        return "[]"
+    }
+    set handles {}
+    if {[catch [list $command $module handles] total]} {
+        set error_message "module query failed for $kind: $total"
+        set total 0
+        return "[]"
+    }
+    set limit [positive_limit $max_rows 200]
+    set rows {}
+    set index 0
+    foreach hdl $handles {
+        if {$index < $limit} {
+            set include_value [expr {$kind eq "parameters"}]
+            set include_connections [expr {$kind eq "ports"}]
+            lappend rows [language_object_json $hdl $include_value $include_connections $module]
+            incr returned
+        } else {
+            set truncated 1
+        }
+        incr index
+        catch {npi_release_handle -object $hdl}
+    }
+    if {$total > $returned} {set truncated 1}
+    return [json_array_raw $rows]
+}
+
+proc require_module_object {module} {
+    if {$module eq ""} {
+        fail_data "MISSING_FIELD" "args.module is required"
+        return ""
+    }
+    if {![require_command npi_handle_by_name]} {return ""}
+    set hdl [resolve_language_handle $module ""]
+    if {$hdl eq ""} {
+        fail_data "MODULE_NOT_FOUND" "module instance not found: $module"
+        return ""
+    }
+    return $hdl
+}
+
+proc module_objects_action {module kind max_rows} {
+    if {$kind eq ""} {
+        fail_data "MISSING_FIELD" "args.kind is required"
+        return
+    }
+    set module_hdl [require_module_object $module]
+    if {$module_hdl eq ""} {return}
+    set items [module_section_json $module $kind $max_rows total returned truncated error_message]
+    catch {npi_release_handle -object $module_hdl}
+    if {$error_message ne ""} {
+        fail_data "MODULE_QUERY_FAILED" $error_message
+        return
+    }
+    ok_data [list \
+        module [json_string $module] \
+        kind [json_string $kind] \
+        count $total \
+        returned_count $returned \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        items $items \
+        summary [json_object [list module $module kind $kind count $total returned_count $returned truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc module_find_instances_action {definition max_rows} {
+    if {$definition eq ""} {
+        fail_data "MISSING_FIELD" "args.definition is required"
+        return
+    }
+    set command ::npi_L1::npi_mod_define_get_inst
+    if {![command_available $command]} {
+        fail_data "NPI_COMMAND_UNAVAILABLE" "NPI command is unavailable in this Verdi runtime: $command"
+        return
+    }
+    set handles {}
+    if {[catch [list $command $definition handles] total]} {
+        fail_data "MODULE_QUERY_FAILED" "module definition query failed: $total"
+        return
+    }
+    set limit [positive_limit $max_rows 200]
+    set rows {}
+    set returned 0
+    set truncated 0
+    foreach hdl $handles {
+        if {$returned < $limit} {
+            lappend rows [language_object_json $hdl 0 0]
+            incr returned
+        } else {
+            set truncated 1
+        }
+        catch {npi_release_handle -object $hdl}
+    }
+    if {$total > $returned} {set truncated 1}
+    ok_data [list \
+        definition [json_string $definition] \
+        count $total \
+        returned_count $returned \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        instances [json_array_raw $rows] \
+        summary [json_object [list definition $definition count $total returned_count $returned truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc module_inspect_action {module sections_text max_rows} {
+    set module_hdl [require_module_object $module]
+    if {$module_hdl eq ""} {return}
+    if {$sections_text eq ""} {
+        set sections {instances parameters ports io nets variables generate_scopes}
+    } else {
+        set sections [split $sections_text "\n"]
+    }
+    set section_pairs {}
+    set count_pairs {}
+    set returned_pairs {}
+    set any_truncated 0
+    foreach kind $sections {
+        if {$kind eq ""} {continue}
+        set items [module_section_json $module $kind $max_rows total returned truncated error_message]
+        if {$error_message ne ""} {
+            catch {npi_release_handle -object $module_hdl}
+            fail_data "MODULE_QUERY_FAILED" $error_message
+            return
+        }
+        lappend section_pairs $kind $items
+        lappend count_pairs $kind [json_value $total]
+        lappend returned_pairs $kind [json_value $returned]
+        if {$truncated} {set any_truncated 1}
+    }
+    set module_object [language_object_json $module_hdl 0 0]
+    catch {npi_release_handle -object $module_hdl}
+    ok_data [list \
+        module [json_string $module] \
+        module_object $module_object \
+        sections [json_object_raw $section_pairs] \
+        counts [json_object_raw $count_pairs] \
+        returned_counts [json_object_raw $returned_pairs] \
+        truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        summary [json_object_raw [list module [json_string $module] section_count [json_value [llength $sections]] truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] counts [json_object_raw $count_pairs]]]]
+}
+
 proc trace_action {mode signal} {
     if {$signal eq ""} {
         fail_data "MISSING_FIELD" "args.signal is required"
@@ -1445,7 +1888,8 @@ proc fsdb_writer_create_scope_action {output overwrite unit begin_time end_time_
 
 proc npi_capabilities_action {} {
     set domains {
-        language {npi_handle_by_name npi_get npi_get_str npi_iterate npi_scan}
+        language {npi_handle_by_name npi_handle npi_get npi_get_str npi_get_value npi_iterate npi_scan}
+        module_library {::npi_L1::npi_mod_define_get_inst ::npi_L1::npi_mod_inst_get_cont_assign ::npi_L1::npi_mod_inst_get_func ::npi_L1::npi_mod_inst_get_gen_scope ::npi_L1::npi_mod_inst_get_instance ::npi_L1::npi_mod_inst_get_instance_in_gen_scope ::npi_L1::npi_mod_inst_get_io ::npi_L1::npi_mod_inst_get_lang_interface ::npi_L1::npi_mod_inst_get_net ::npi_L1::npi_mod_inst_get_parameter ::npi_L1::npi_mod_inst_get_port ::npi_L1::npi_mod_inst_get_primitive ::npi_L1::npi_mod_inst_get_process_always ::npi_L1::npi_mod_inst_get_process_init ::npi_L1::npi_mod_inst_get_task ::npi_L1::npi_mod_inst_get_var}
         netlist {npi_nl_handle_by_name npi_nl_get npi_nl_get_str npi_nl_iterate npi_nl_scan}
         text {npi_text_file_by_name npi_text_line_by_number npi_text_iter_start npi_text_replace_line}
         design_manipulation {npi_dm_module_by_name npi_dm_add_net npi_dm_clone_module npi_dm_write_text_mode}
@@ -1505,6 +1949,20 @@ proc main {} {
         active_trace_action [env_or_empty KDEBUG_TCL_SIGNAL] [env_or_empty KDEBUG_TCL_TIME]
     } elseif {$action eq "npi.capabilities"} {
         npi_capabilities_action
+    } elseif {$action eq "language.resolve"} {
+        language_resolve_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_SCOPE]
+    } elseif {$action eq "language.iterate"} {
+        language_iterate_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_SCOPE] [env_or_empty KDEBUG_TCL_OBJECT_TYPE] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "language.relate"} {
+        language_relate_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_SCOPE] [env_or_empty KDEBUG_TCL_RELATION_TYPE]
+    } elseif {$action eq "language.value"} {
+        language_value_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_SCOPE] [env_or_empty KDEBUG_TCL_VALUE_FORMAT]
+    } elseif {$action eq "module.objects"} {
+        module_objects_action [env_or_empty KDEBUG_TCL_MODULE] [env_or_empty KDEBUG_TCL_KIND] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "module.find_instances"} {
+        module_find_instances_action [env_or_empty KDEBUG_TCL_DEFINITION] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "module.inspect"} {
+        module_inspect_action [env_or_empty KDEBUG_TCL_MODULE] [env_or_empty KDEBUG_TCL_SECTIONS] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "netlist.resolve"} {
         netlist_resolve_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE]
     } elseif {$action eq "netlist.iterate"} {

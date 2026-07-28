@@ -15,12 +15,12 @@
     "query": "npi_fixture_top.result",
     "requested_type": "npiNlNet",
     "object": {
-      "name": "result[7:0]",
-      "full_name": "npi_fixture_top.result[7:0]",
+      "name": "result[11:0]",
+      "full_name": "npi_fixture_top.result[11:0]",
       "type": "npiNlDeclNet",
       "instance_type": "",
       "cell_type": "",
-      "size": 8
+      "size": 12
     },
     "summary": {
       "name": "npi_fixture_top.result",

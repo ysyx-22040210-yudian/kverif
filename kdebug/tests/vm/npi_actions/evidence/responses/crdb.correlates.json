@@ -14,7 +14,7 @@
     "truncated": false
   },
   "data": {
-    "database": "/home/host/kverif_npi_action_test/crdb/dut.crdb",
+    "database": "/home/host/kverif_npi_action_test_20260728_full/crdb/dut.crdb",
     "query": "npi_crdb_top.state",
     "level": "RTL",
     "count": 1,

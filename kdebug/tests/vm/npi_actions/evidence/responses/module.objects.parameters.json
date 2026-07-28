@@ -1,0 +1,148 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.objects",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "module": "npi_fixture_top.u_alu",
+    "kind": "parameters",
+    "count": 3,
+    "returned_count": 3,
+    "truncated": false
+  },
+  "data": {
+    "module": "npi_fixture_top.u_alu",
+    "kind": "parameters",
+    "count": 3,
+    "returned_count": 3,
+    "truncated": false,
+    "items": [
+      {
+        "object": {
+          "handle": "348330208",
+          "name": "WIDTH",
+          "full_name": "npi_fixture_top.u_alu.WIDTH",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiParameter",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 9,
+          "def_line": null,
+          "size": 32,
+          "direction": "npiUndefined",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiDecConst",
+          "net_type": "npiUndefined",
+          "local_param": 0,
+          "signed": 1,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": "WIDTH"
+        },
+        "values": {
+          "bin": "00000000000000000000000000001100",
+          "oct": "00000000014",
+          "hex": "0000000c",
+          "dec": "12",
+          "string": "    ",
+          "real": "12.000000",
+          "int": "12"
+        }
+      },
+      {
+        "object": {
+          "handle": "348330264",
+          "name": "BIAS",
+          "full_name": "npi_fixture_top.u_alu.BIAS",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiParameter",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 10,
+          "def_line": null,
+          "size": 12,
+          "direction": "npiUndefined",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiDecConst",
+          "net_type": "npiUndefined",
+          "local_param": 0,
+          "signed": 0,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": "BIAS"
+        },
+        "values": {
+          "bin": "000000000001",
+          "oct": "0001",
+          "hex": "001",
+          "dec": "1",
+          "string": "  ",
+          "real": "1.000000",
+          "int": "1"
+        }
+      },
+      {
+        "object": {
+          "handle": "348330320",
+          "name": "RESULT_WIDTH",
+          "full_name": "npi_fixture_top.u_alu.RESULT_WIDTH",
+          "parent_module": "npi_fixture_top.u_alu",
+          "type": "npiParameter",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 16,
+          "def_line": null,
+          "size": 32,
+          "direction": "npiUndefined",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiDecConst",
+          "net_type": "npiUndefined",
+          "local_param": 1,
+          "signed": 1,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": "RESULT_WIDTH"
+        },
+        "values": {
+          "bin": "00000000000000000000000000001100",
+          "oct": "00000000014",
+          "hex": "0000000c",
+          "dec": "12",
+          "string": "    ",
+          "real": "12.000000",
+          "int": "12"
+        }
+      }
+    ],
+    "summary": {
+      "module": "npi_fixture_top.u_alu",
+      "kind": "parameters",
+      "count": 3,
+      "returned_count": 3,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

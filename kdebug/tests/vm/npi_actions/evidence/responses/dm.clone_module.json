@@ -10,17 +10,17 @@
   "summary": {
     "module": "npi_fixture_alu",
     "new_name": "npi_fixture_alu_clone",
-    "output_dir": "/home/host/kverif_npi_action_test/design/dm-clone",
+    "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-clone",
     "status": "written"
   },
   "data": {
     "module": "npi_fixture_alu",
     "new_name": "npi_fixture_alu_clone",
-    "output_dir": "/home/host/kverif_npi_action_test/design/dm-clone",
+    "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-clone",
     "summary": {
       "module": "npi_fixture_alu",
       "new_name": "npi_fixture_alu_clone",
-      "output_dir": "/home/host/kverif_npi_action_test/design/dm-clone",
+      "output_dir": "/home/host/kverif_npi_action_test_20260728_full/design/dm-clone",
       "status": "written"
     },
     "verdi": {

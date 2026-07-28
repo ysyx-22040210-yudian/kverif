@@ -813,6 +813,13 @@ KDebug 依据 NPI O-2018.09-SP2 功能矩阵增加了一组独立 Tcl action。�
 | action | 输入 | 功能 |
 | --- | --- | --- |
 | `npi.capabilities` | 无 | 探测当前 Verdi 进程实际可用的 NPI Tcl command |
+| `language.resolve` | daidir、name、可选 scope | 解析任意 Language Model 对象并返回固定安全属性快照 |
+| `language.iterate` | daidir、name、object_type | 对指定对象执行受控的 `npi_iterate/npi_scan` |
+| `language.relate` | daidir、name、relation_type | 查询 `npiHighConn`、`npiLowConn` 等一对一关系；端口名自动回退到真实 port handle |
+| `language.value` | daidir、name、format | 读取 elaborated 参数、localparam 或常量值 |
+| `module.find_instances` | daidir、definition | 按 module definition 查找所有例化路径 |
+| `module.objects` | daidir、module、kind | 读取 Module Library 全部 15 类对象 |
+| `module.inspect` | daidir、module、可选 sections | 一次汇总参数、端口、IO、连接、子实例和过程等多个 section |
 | `netlist.resolve/iterate` | daidir | flattened netlist 查找和一对多遍历 |
 | `text.line/words` | daidir、file、line | NPI Text Model 行、word 和 TWA 读取 |
 | `text.replace_line` | daidir、file、line、content、output | 修改源码模型并只写新副本 |
@@ -835,9 +842,26 @@ KDebug 依据 NPI O-2018.09-SP2 功能矩阵增加了一组独立 Tcl action。�
 
 ```bash
 KDEBUG=/home/host/kverif/tools/kdebug
+DAIDIR=/data/build/simv.daidir
+
+"$KDEBUG" --json action module.find_instances --daidir "$DAIDIR" \
+  --arg definition=alu --limit max_rows=200
+
+"$KDEBUG" --json action module.objects --daidir "$DAIDIR" \
+  --arg module=top.u_alu --arg kind=parameters --limit max_rows=200
+
+"$KDEBUG" --json action module.objects --daidir "$DAIDIR" \
+  --arg module=top.u_alu --arg kind=ports --limit max_rows=200
+
+"$KDEBUG" --json action module.inspect --daidir "$DAIDIR" \
+  --arg module=top.u_alu \
+  --arg 'sections=["instances","parameters","ports","io","nets","variables"]'
+
+"$KDEBUG" --json action language.value --daidir "$DAIDIR" \
+  --arg name=top.u_alu.WIDTH --arg format=npiDecStrVal
 
 "$KDEBUG" --json action netlist.resolve \
-  --daidir /data/build/simv.daidir \
+  --daidir "$DAIDIR" \
   --arg name=top.u_dut.ready --arg object_type=npiNlNet
 
 "$KDEBUG" --json action text.replace_line \
@@ -861,7 +885,9 @@ POWER_DIR=/data/project/power
 `text.replace_line` 始终禁止输入和输出为同一文件。transaction/hierarchy 数组由 Python
 请求层校验并转换成受控临时 TSV，Tcl 后端只读取固定字段，不执行 `eval`。
 
-VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。13 个 action 已通过；
+VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。20 个 NPI action 已通过，
+其中 `module.objects` 的 15 个 `kind` 均被调用；实测得到 `WIDTH=12`、3 个端口及方向、
+每个端口非空的 high/low connection，并正确识别直接例化和 generate 内例化。
 `power.resolve/list` 已真实加载 RTL+UPF，但当前 VM 缺少 `PowerAwareAnalysis` license，响应为
 `LICENSE_UNAVAILABLE`。机器结果见
 [`tests/vm/npi_actions/evidence/vm-summary.json`](tests/vm/npi_actions/evidence/vm-summary.json)，
@@ -869,6 +895,12 @@ VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。13 �
 
 逐字段参数、完整命令、返回数据处理和二次开发边界见
 [二次开发手册 10.2.1](../doc/secondary_development_guide.md#1021-verdi-2018-npi-独立-action)。
+该节已经把每个 NPI action 的 `target/args/limits` 以及 transaction/scope writer 的
+嵌套数组字段逐项列成表格；公共 CLI 的全部 flags、必需性、默认值和例子见
+[二次开发手册第 10 章](../doc/secondary_development_guide.md#10-独立-cli-参数与功能参考)。
+手册 28 个域、759 个 API 目录条目的逐项对照见
+[NPI API 覆盖清单](../doc/npi_api_inventory.md)，归并后的用户能力矩阵见
+[NPI 功能覆盖审计](../doc/npi_functional_coverage.md)。
 
 ## 错误、截断与证据
 

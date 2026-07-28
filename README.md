@@ -22,6 +22,10 @@
 - [kcov: coverage 查询](#kcov-coverage-查询)
 - [CLI 二次开发接口](#cli-二次开发接口)
 - [二次开发使用指导手册](doc/secondary_development_guide.md)
+- [全部 CLI 参数汇总表](doc/secondary_development_guide.md#10-独立-cli-参数与功能参考)
+- [NPI action 逐字段参数表](doc/secondary_development_guide.md#1021-verdi-2018-npi-独立-action)
+- [NPI 规范化能力矩阵](doc/npi_functional_coverage.md)
+- [NPI 逐 API 覆盖清单](doc/npi_api_inventory.md)
 - [kverif-mcp: AI Agent 统一入口](#kverif-mcp-ai-agent-统一入口)
 - [keda-runner: 受控 EDA 命令执行](#keda-runner-受控-eda-命令执行)
 - [典型使用流程](#典型使用流程)
@@ -2116,7 +2120,9 @@ kdebug actions --json
 - [`ksva/README.md`](ksva/README.md): SVA lowering 和解释
 - [`kcov/README.md`](kcov/README.md): coverage 查询
 - [`examples/secondary_development/README.md`](examples/secondary_development/README.md): Bash/csh/Perl/Python 调用工具、处理输出并生成结论的完整示例
-- [`doc/secondary_development_guide.md`](doc/secondary_development_guide.md): CLI 参数、JSON、跨语言脚本、内部平台接入和新增 action 的完整二次开发手册
+- [`doc/secondary_development_guide.md`](doc/secondary_development_guide.md): 全部公开 CLI 参数、逐字段 NPI action 表、JSON、跨语言脚本、内部平台接入和新增 action 的完整二次开发手册
+- [`doc/npi_functional_coverage.md`](doc/npi_functional_coverage.md): NPI 70 个去重后用户能力单元、覆盖判定和 VM 证据
+- [`doc/npi_api_inventory.md`](doc/npi_api_inventory.md): NPI 手册 28 个域、759 个 API 目录条目的逐项 KVerif 对照
 - [`doc/benchmark_fault_injection_audit.md`](doc/benchmark_fault_injection_audit.md): XiangShan benchmark 16 个 case 的实际注错前后代码及公开标签偏差审计
 - [`doc/benchmark_kdebug_evidence_audit.md`](doc/benchmark_kdebug_evidence_audit.md): 审计 16 个 case 是否真实调用 KDebug、evidence 来源及工具作用；结论是历史名义工具组未执行 KDebug
 - [`doc/benchmark_model_case_analysis.md`](doc/benchmark_model_case_analysis.md): GPT、Qwen、GLM 在 16 个 XiangShan case 中的外显诊断、补丁轨迹、终态和误判原因

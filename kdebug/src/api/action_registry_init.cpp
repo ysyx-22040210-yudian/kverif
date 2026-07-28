@@ -189,6 +189,13 @@ void register_npi_extensions(ActionRegistry& r) {
     };
     const Entry entries[] = {
         {"npi.capabilities", "builtin", ResourceRequirement::None, {nullptr}, 0},
+        {"language.resolve", "design", ResourceRequirement::Design, {"name"}, 1},
+        {"language.iterate", "design", ResourceRequirement::Design, {"name", "object_type"}, 2},
+        {"language.relate", "design", ResourceRequirement::Design, {"name", "relation_type"}, 2},
+        {"language.value", "design", ResourceRequirement::Design, {"name"}, 1},
+        {"module.objects", "design", ResourceRequirement::Design, {"module", "kind"}, 2},
+        {"module.find_instances", "design", ResourceRequirement::Design, {"definition"}, 1},
+        {"module.inspect", "design", ResourceRequirement::Design, {"module"}, 1},
         {"netlist.resolve", "design", ResourceRequirement::Design, {"name"}, 1},
         {"netlist.iterate", "design", ResourceRequirement::Design, {"object_type"}, 1},
         {"text.line", "design", ResourceRequirement::Design, {"file", "line"}, 2},

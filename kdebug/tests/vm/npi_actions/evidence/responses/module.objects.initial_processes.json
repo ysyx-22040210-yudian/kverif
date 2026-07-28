@@ -1,0 +1,69 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.objects",
+  "tool": {
+    "name": "kdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "module": "npi_fixture_top",
+    "kind": "initial_processes",
+    "count": 1,
+    "returned_count": 1,
+    "truncated": false
+  },
+  "data": {
+    "module": "npi_fixture_top",
+    "kind": "initial_processes",
+    "count": 1,
+    "returned_count": 1,
+    "truncated": false,
+    "items": [
+      {
+        "object": {
+          "handle": "350892976",
+          "name": "",
+          "full_name": "",
+          "parent_module": "npi_fixture_top",
+          "type": "npiInitial",
+          "def_name": "",
+          "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+          "def_file": "",
+          "line": 66,
+          "def_line": null,
+          "size": null,
+          "direction": "npiUndefined",
+          "port_index": null,
+          "port_type": "",
+          "const_type": "npiUndefined",
+          "net_type": "npiUndefined",
+          "local_param": null,
+          "signed": null,
+          "automatic": null,
+          "top": null,
+          "cell_instance": null,
+          "decompiled": ""
+        }
+      }
+    ],
+    "summary": {
+      "module": "npi_fixture_top",
+      "kind": "initial_processes",
+      "count": 1,
+      "returned_count": 1,
+      "truncated": false
+    },
+    "verdi": {
+      "exit_code": 0
+    }
+  },
+  "findings": [],
+  "suggested_next_actions": [],
+  "warnings": [],
+  "error": null,
+  "meta": {
+    "truncated": false
+  }
+}

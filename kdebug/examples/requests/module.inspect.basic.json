@@ -1,0 +1,10 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "module.inspect",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {
+    "module": "npi_fixture_top.u_alu",
+    "sections": ["instances", "parameters", "ports", "io", "nets", "variables"]
+  },
+  "limits": {"max_rows": 100}
+}

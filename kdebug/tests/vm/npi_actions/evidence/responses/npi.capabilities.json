@@ -8,8 +8,8 @@
   },
   "session": null,
   "summary": {
-    "domain_count": 11,
-    "available_domain_count": 11
+    "domain_count": 12,
+    "available_domain_count": 12
   },
   "data": {
     "domains": [
@@ -22,6 +22,10 @@
             "available": true
           },
           {
+            "command": "npi_handle",
+            "available": true
+          },
+          {
             "command": "npi_get",
             "available": true
           },
@@ -30,11 +34,85 @@
             "available": true
           },
           {
+            "command": "npi_get_value",
+            "available": true
+          },
+          {
             "command": "npi_iterate",
             "available": true
           },
           {
             "command": "npi_scan",
+            "available": true
+          }
+        ]
+      },
+      {
+        "domain": "module_library",
+        "available": true,
+        "commands": [
+          {
+            "command": "::npi_L1::npi_mod_define_get_inst",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_cont_assign",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_func",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_gen_scope",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_instance",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_instance_in_gen_scope",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_io",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_lang_interface",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_net",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_parameter",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_port",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_primitive",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_process_always",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_process_init",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_task",
+            "available": true
+          },
+          {
+            "command": "::npi_L1::npi_mod_inst_get_var",
             "available": true
           }
         ]
@@ -261,8 +339,8 @@
       }
     ],
     "summary": {
-      "domain_count": 11,
-      "available_domain_count": 11
+      "domain_count": 12,
+      "available_domain_count": 12
     },
     "verdi": {
       "exit_code": 0

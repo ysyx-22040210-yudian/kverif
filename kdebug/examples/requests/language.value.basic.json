@@ -1,0 +1,6 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "language.value",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {"name": "npi_fixture_top.u_alu.WIDTH", "format": "npiDecStrVal"}
+}

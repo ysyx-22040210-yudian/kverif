@@ -10,13 +10,13 @@
   "summary": {
     "reference": "npi_fixture_top",
     "object_type": "npiNlNet",
-    "count": 4,
+    "count": 7,
     "truncated": false
   },
   "data": {
     "reference": "npi_fixture_top",
     "object_type": "npiNlNet",
-    "count": 4,
+    "count": 7,
     "truncated": false,
     "items": [
       {
@@ -28,34 +28,58 @@
         "size": 1
       },
       {
-        "name": "lhs[7:0]",
-        "full_name": "npi_fixture_top.lhs[7:0]",
+        "name": "inverted_probe",
+        "full_name": "npi_fixture_top.inverted_probe",
         "type": "npiNlDeclNet",
         "instance_type": "",
         "cell_type": "",
-        "size": 8
+        "size": 1
       },
       {
-        "name": "result[7:0]",
-        "full_name": "npi_fixture_top.result[7:0]",
-        "type": "npiNlDeclNet",
+        "name": "lhs[0]",
+        "full_name": "npi_fixture_top.lhs[0]",
+        "type": "npiNlSliceNet",
         "instance_type": "",
         "cell_type": "",
-        "size": 8
+        "size": 1
       },
       {
-        "name": "rhs[7:0]",
-        "full_name": "npi_fixture_top.rhs[7:0]",
+        "name": "lhs[11:0]",
+        "full_name": "npi_fixture_top.lhs[11:0]",
         "type": "npiNlDeclNet",
         "instance_type": "",
         "cell_type": "",
-        "size": 8
+        "size": 12
+      },
+      {
+        "name": "probe",
+        "full_name": "npi_fixture_top.probe",
+        "type": "npiNlDeclNet",
+        "instance_type": "",
+        "cell_type": "",
+        "size": 1
+      },
+      {
+        "name": "result[11:0]",
+        "full_name": "npi_fixture_top.result[11:0]",
+        "type": "npiNlDeclNet",
+        "instance_type": "",
+        "cell_type": "",
+        "size": 12
+      },
+      {
+        "name": "rhs[11:0]",
+        "full_name": "npi_fixture_top.rhs[11:0]",
+        "type": "npiNlDeclNet",
+        "instance_type": "",
+        "cell_type": "",
+        "size": 12
       }
     ],
     "summary": {
       "reference": "npi_fixture_top",
       "object_type": "npiNlNet",
-      "count": 4,
+      "count": 7,
       "truncated": false
     },
     "verdi": {

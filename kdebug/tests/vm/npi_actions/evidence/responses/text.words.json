@@ -8,15 +8,15 @@
   },
   "session": null,
   "summary": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "count": 12,
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "count": 14,
     "truncated": false
   },
   "data": {
-    "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-    "line": 7,
-    "count": 12,
+    "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+    "line": 27,
+    "count": 14,
     "truncated": false,
     "words": [
       {
@@ -27,9 +27,9 @@
       },
       {
         "index": 2,
-        "text": "result",
-        "attribute": "npiTextOutSignal",
-        "attribute_id": 9
+        "text": "sum",
+        "attribute": "npiTextSignal",
+        "attribute_id": 7
       },
       {
         "index": 3,
@@ -51,51 +51,63 @@
       },
       {
         "index": 6,
+        "text": "add_with_bias",
+        "attribute": "npiTextInstance",
+        "attribute_id": 6
+      },
+      {
+        "index": 7,
+        "text": "(",
+        "attribute": "npiTextSymbol",
+        "attribute_id": 13
+      },
+      {
+        "index": 8,
         "text": "lhs",
         "attribute": "npiTextInSignal",
         "attribute_id": 8
       },
       {
-        "index": 7,
-        "text": " ",
-        "attribute": "npiTextWhiteSpace",
-        "attribute_id": 2
-      },
-      {
-        "index": 8,
-        "text": "+",
-        "attribute": "npiTextOperator",
-        "attribute_id": 11
-      },
-      {
         "index": 9,
-        "text": " ",
-        "attribute": "npiTextWhiteSpace",
-        "attribute_id": 2
+        "text": ",",
+        "attribute": "npiTextSymbol",
+        "attribute_id": 13
       },
       {
         "index": 10,
+        "text": " ",
+        "attribute": "npiTextWhiteSpace",
+        "attribute_id": 2
+      },
+      {
+        "index": 11,
         "text": "rhs",
         "attribute": "npiTextInSignal",
         "attribute_id": 8
       },
       {
-        "index": 11,
+        "index": 12,
+        "text": ")",
+        "attribute": "npiTextSymbol",
+        "attribute_id": 13
+      },
+      {
+        "index": 13,
         "text": ";",
         "attribute": "npiTextSymbol",
         "attribute_id": 13
       },
       {
-        "index": 12,
+        "index": 14,
         "text": "\n",
         "attribute": "npiTextWhiteSpace",
         "attribute_id": 2
       }
     ],
     "summary": {
-      "file": "/home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv",
-      "line": 7,
-      "count": 12,
+      "file": "/home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv",
+      "line": 27,
+      "count": 14,
       "truncated": false
     },
     "verdi": {

@@ -1,0 +1,17 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.find_instances",
+  "summary": {"definition": "npi_fixture_alu", "count": 1, "returned_count": 1, "truncated": false},
+  "data": {
+    "definition": "npi_fixture_alu",
+    "count": 1,
+    "returned_count": 1,
+    "truncated": false,
+    "instances": [
+      {"object": {"name": "u_alu", "full_name": "npi_fixture_top.u_alu", "type": "npiModule", "def_name": "npi_fixture_alu", "line": 20}}
+    ],
+    "summary": {"definition": "npi_fixture_alu", "count": 1, "returned_count": 1, "truncated": false}
+  },
+  "warnings": []
+}

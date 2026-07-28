@@ -1,0 +1,24 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "language.resolve",
+  "summary": {"name": "npi_fixture_top.u_alu", "scope": "", "status": "resolved"},
+  "data": {
+    "query": "npi_fixture_top.u_alu",
+    "scope": "",
+    "object": {
+      "object": {
+        "name": "u_alu",
+        "full_name": "npi_fixture_top.u_alu",
+        "type": "npiModule",
+        "def_name": "npi_fixture_alu",
+        "file": "/data/rtl/design.sv",
+        "line": 20
+      },
+      "values": {"bin": null, "oct": null, "hex": null, "dec": null, "string": null, "real": null, "int": null},
+      "connections": {"high": null, "low": null}
+    },
+    "summary": {"name": "npi_fixture_top.u_alu", "scope": "", "status": "resolved"}
+  },
+  "warnings": []
+}

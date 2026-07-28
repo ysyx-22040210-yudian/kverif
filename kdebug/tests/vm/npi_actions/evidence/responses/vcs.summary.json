@@ -8,27 +8,27 @@
   },
   "session": null,
   "summary": {
-    "database": "/home/host/kverif_npi_action_test/design/simv.daidir",
+    "database": "/home/host/kverif_npi_action_test_20260728_full/design/simv.daidir",
     "warnings": 1,
     "errors": 0,
-    "modules": 2
+    "modules": 3
   },
   "data": {
-    "database": "/home/host/kverif_npi_action_test/design/simv.daidir",
-    "name": "/home/host/kverif_npi_action_test/design/simv.daidir",
+    "database": "/home/host/kverif_npi_action_test_20260728_full/design/simv.daidir",
+    "name": "/home/host/kverif_npi_action_test_20260728_full/design/simv.daidir",
     "tool": {
       "name": "VCS",
-      "version": "O-2018.09-1"
+      "version": "O-2018.09-SP2"
     },
     "compilation": {
-      "path": "/home/host/kverif_npi_action_test/design",
-      "options": "-full64 -sverilog -kdb -lca -debug_access+all -Xdump_vcsdb /home/host/kverif_npi_candidate_20260724/kdebug/tests/vm/npi_actions/design.sv -top npi_fixture_top -o simv",
+      "path": "/home/host/kverif_npi_action_test_20260728_full/design",
+      "options": "-full64 -sverilog -kdb -lca -debug_access+all -Xdump_vcsdb /home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/design.sv -top npi_fixture_top -o simv",
       "warnings": 1,
       "errors": 0,
       "result": 1
     },
     "design": {
-      "modules": 2,
+      "modules": 3,
       "verilog_files": 0,
       "systemverilog_files": 1
     },
@@ -39,10 +39,10 @@
       "waveform_count": null
     },
     "summary": {
-      "database": "/home/host/kverif_npi_action_test/design/simv.daidir",
+      "database": "/home/host/kverif_npi_action_test_20260728_full/design/simv.daidir",
       "warnings": 1,
       "errors": 0,
-      "modules": 2
+      "modules": 3
     },
     "verdi": {
       "exit_code": 0

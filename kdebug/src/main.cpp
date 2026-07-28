@@ -333,14 +333,13 @@ ShortcutParseResult parse_shortcut(int argc, char** argv, OutputFormat& format) 
         }
     }
 
-    const bool target_empty = target.empty();
-    const bool args_empty = args.empty();
-    const bool limits_empty = limits.empty();
-    const bool output_empty = output.empty();
-    if (target_empty) request.erase("target");
-    if (args_empty) request.erase("args");
-    if (limits_empty) request.erase("limits");
-    if (output_empty) request.erase("output");
+    // ordered_json stores object members in a vector. Erasing an earlier
+    // member invalidates references to later members, so re-read each member
+    // from the parent before deciding whether to erase it.
+    if (request["target"].empty()) request.erase("target");
+    if (request["args"].empty()) request.erase("args");
+    if (request["limits"].empty()) request.erase("limits");
+    if (request["output"].empty()) request.erase("output");
     result.request = request;
     result.ok = true;
     return result;

@@ -736,6 +736,13 @@ def run_tcl_npi(request, state):
     env["KDEBUG_TCL_MAX_DEPTH"] = str(args.get("max_depth", limits.get("max_depth", 3)))
     env["KDEBUG_TCL_NAME"] = str(args.get("name", ""))
     env["KDEBUG_TCL_OBJECT_TYPE"] = str(args.get("object_type", ""))
+    env["KDEBUG_TCL_RELATION_TYPE"] = str(args.get("relation_type", ""))
+    env["KDEBUG_TCL_VALUE_FORMAT"] = str(args.get("format", ""))
+    env["KDEBUG_TCL_KIND"] = str(args.get("kind", ""))
+    env["KDEBUG_TCL_DEFINITION"] = str(args.get("definition", ""))
+    sections = args.get("sections", [])
+    if isinstance(sections, list):
+        env["KDEBUG_TCL_SECTIONS"] = "\n".join(str(item) for item in sections)
     env["KDEBUG_TCL_FILE"] = str(args.get("file", ""))
     env["KDEBUG_TCL_LINE"] = str(args.get("line", ""))
     env["KDEBUG_TCL_CONTENT"] = str(args.get("content", ""))
@@ -2269,7 +2276,10 @@ def run_action(request, state):
     if action in ("trace.driver", "trace.load", "trace.query", "signal.resolve",
                   "signal.canonicalize", "signal.info", "signal.scan",
                   "value.at", "value.batch_at", "scope.list",
-                  "npi.capabilities", "netlist.resolve", "netlist.iterate",
+                  "npi.capabilities", "language.resolve", "language.iterate",
+                  "language.relate", "language.value", "module.objects",
+                  "module.find_instances", "module.inspect",
+                  "netlist.resolve", "netlist.iterate",
                   "text.line", "text.words", "text.replace_line",
                   "dm.add_net", "dm.clone_module", "vcs.summary",
                   "power.resolve", "power.list", "crdb.resolve",

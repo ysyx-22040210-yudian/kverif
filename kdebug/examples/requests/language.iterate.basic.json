@@ -1,0 +1,7 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "language.iterate",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {"name": "npi_fixture_top.u_alu", "object_type": "npiParameter"},
+  "limits": {"max_rows": 100}
+}

@@ -1,0 +1,6 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "language.relate",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {"name": "npi_fixture_top.u_alu.result", "relation_type": "npiHighConn"}
+}

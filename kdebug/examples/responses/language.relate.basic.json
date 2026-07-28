@@ -1,0 +1,17 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "language.relate",
+  "summary": {"source": "npi_fixture_top.u_alu.result", "relation_type": "npiHighConn", "status": "resolved"},
+  "data": {
+    "source": "npi_fixture_top.u_alu.result",
+    "relation_type": "npiHighConn",
+    "object": {
+      "object": {"name": "result", "full_name": "npi_fixture_top.result", "type": "npiNet", "size": 8},
+      "values": {"bin": null, "oct": null, "hex": null, "dec": null, "string": null, "real": null, "int": null},
+      "connections": {"high": null, "low": null}
+    },
+    "summary": {"source": "npi_fixture_top.u_alu.result", "relation_type": "npiHighConn", "status": "resolved"}
+  },
+  "warnings": []
+}
