@@ -1,5 +1,9 @@
 # kverif CLI 二次开发示例
 
+第一次接触 KVerif 时，先完成 [`../../doc/quickstart.md`](../../doc/quickstart.md)。需要生成
+第一份脚本时可直接运行 `tools/kverif new signal-check --lang sh|csh|perl|python`；本目录
+用于理解生成后的完整工作流和继续做复杂二次开发。
+
 这里的示例不导入任何 kverif Python 包，并分别给出 Bash、csh、Perl 和 Python
 调用方式。每个语言示例都会调用真实工具命令、解析工具输出，并生成新的项目结论。
 稳定集成面只有四项：
@@ -8,6 +12,32 @@
 2. 命令行参数或原始 JSON request。
 3. `--json` 返回的结构化结果。
 4. 进程退出码：`0` 成功，非 `0` 失败。
+
+## CLI-only 边界
+
+二次开发项目只调用已经安装好的可执行文件，不复制、不编译、不调试任何 NPI 代码。
+KVerif 安装内部会自行装载 Verdi 2018 Tcl NPI backend；该实现对调用脚本是黑盒。
+
+| 调用方需要做 | 调用方不需要、也不应做 |
+| --- | --- |
+| 执行 `/opt/kverif/tools/kdebug`、`kcov` 等命令 | `source kdebug_npi.tcl` 或 `kcov_npi.tcl` |
+| 传 FSDB、`simv.daidir`、VDB、action 参数 | 调用 `npi_*` Tcl procedure |
+| 解析 `--json` stdout 并检查退出码 | 包含 NPI 头文件、链接 NPI C/C++ 动态库 |
+| 按 `actions/schema` 做版本和字段检查 | 导入 kdebug/kcov Python 内部模块 |
+| 配置站点 EDA 环境和 license | 设置 `NPIL1_PATH` 或 NPI 专用 `LD_LIBRARY_PATH` |
+
+只要 `verdi` 已在 `PATH`，或站点设置了 `VERDI_HOME`，`tools/kdebug` 和 `tools/kcov`
+会在进程内部推导 `NPIL1_PATH` 与 NPI library path。业务脚本不保存这些路径，也不需要
+知道具体 NPI procedure。最小调用始终是普通进程调用：
+
+```bash
+/opt/kverif/tools/kdebug --json action module.objects \
+  --daidir /data/build/simv.daidir \
+  --arg module=top.u_alu --arg kind=ports
+```
+
+`tests/check_cli_only_boundary.py` 会扫描全部下游示例，禁止直接 Tcl/NPI 调用、内部模块
+导入和 NPI library 编译。这个门禁随 `tests/run.sh` 一起执行。
 
 目录内容：
 
@@ -25,6 +55,8 @@ secondary_development/
   fixtures/fsdb_handshake/    可复现 RTL、testbench、真实 FSDB 和真实信号清单
   json_response.py             独立进程式 JSON 校验和聚合器，不是 SDK
   tests/run.sh                 使用假 CLI 的无 EDA 合约测试
+  tests/check_cli_only_boundary.py  禁止示例越过 executable boundary
+  tests/check_wrapper_eda_env.sh    验证 executable 自动准备私有 NPI 环境
   tests/run_real_fsdb.sh       使用 Verdi 和随库 FSDB 的真实后端回归
 ```
 

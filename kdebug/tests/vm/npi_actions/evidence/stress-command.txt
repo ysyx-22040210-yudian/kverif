@@ -1,0 +1,1 @@
+KDEBUG_STRESS_ITERATIONS=10 KDEBUG_STRESS_PARALLEL=2 KVERIF_HOME=/home/host/kverif_npi_candidate_20260728_full KDEBUG_BIN=/home/host/kverif_npi_candidate_20260728_full/tools/kdebug bash /home/host/kverif_npi_candidate_20260728_full/kdebug/tests/vm/npi_actions/stress.sh /home/host/kverif_npi_action_stress_20260729

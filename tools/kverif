@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$script_dir/.." && pwd)"
+
+python_supported() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' \
+    >/dev/null 2>&1
+}
+
+python_bin="${PYTHON:-${KVERIF_PYTHON:-}}"
+if [[ -z "$python_bin" ]]; then
+  for candidate in \
+    "${HOME}/miniconda3/bin/python" \
+    "${HOME}/miniconda3/envs/kverif-mcp/bin/python" \
+    /usr/local/bin/python3.11 /usr/local/bin/python3.10 \
+    /usr/local/bin/python3.9 /usr/local/bin/python3.8 \
+    python3.11 python3.10 python3.9 python3.8 python3 python; do
+    if { [[ -x "$candidate" ]] || command -v "$candidate" >/dev/null 2>&1; } && \
+       python_supported "$candidate"; then
+      python_bin="$candidate"
+      break
+    fi
+  done
+fi
+[[ -n "$python_bin" ]] || {
+  echo "ERROR: Python 3.8 or newer is required to run kverif" >&2
+  exit 2
+}
+python_supported "$python_bin" || {
+  echo "ERROR: configured Python is older than 3.8: $python_bin" >&2
+  exit 2
+}
+
+export KVERIF_HOME="${KVERIF_HOME:-$root}"
+export PYTHONPATH="$root/kverif_cli/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec "$python_bin" -m kverif_cli "$@"

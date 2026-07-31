@@ -1,4 +1,4 @@
-.PHONY: all kdebug kbit kentry kloc kberif kcov test full-test clean kcov-test secondary-examples-test secondary-examples-real-test install-skill
+.PHONY: all kdebug kbit kentry kloc kberif kcov test full-test clean kcov-test kverif-cli-test secondary-examples-test secondary-examples-real-test install-skill
 
 PYTHON ?= python3
 SKILL_NAME ?= kverif
@@ -26,6 +26,9 @@ kcov:
 
 kcov-test:
 	$(MAKE) -C kcov PYTHON=$(PYTHON) test
+
+kverif-cli-test:
+	bash kverif_cli/tests/run.sh
 
 secondary-examples-test:
 	bash examples/secondary_development/tests/run.sh
@@ -71,6 +74,7 @@ test: kdebug kbit kentry kloc kberif kcov
 	$(MAKE) -C kloc test
 	$(MAKE) -C kberif PYTHON=$(PYTHON) test
 	$(MAKE) -C kcov PYTHON=$(PYTHON) test
+	$(MAKE) kverif-cli-test
 	$(MAKE) secondary-examples-test
 	$(MAKE) -C kdebug/testdata/combined/active_driver fixture
 	regression/run_kdebug_regression.sh
@@ -80,6 +84,7 @@ full-test: kdebug kbit kentry kloc kberif
 	$(MAKE) -C kentry PYTHON=$(PYTHON) test
 	$(MAKE) -C kloc test
 	$(MAKE) -C kberif PYTHON=$(PYTHON) test
+	$(MAKE) kverif-cli-test
 	regression/run_full_regression.sh
 
 clean:

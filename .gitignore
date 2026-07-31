@@ -38,6 +38,8 @@ regression/*
 !examples/secondary_development/tests/**
 !keda_runner/tests/
 !keda_runner/tests/**
+!kverif_cli/tests/
+!kverif_cli/tests/**
 kdebug/testdata/**/out/
 kdebug/testdata/**/csrc/
 kdebug/testdata/**/ucli.key

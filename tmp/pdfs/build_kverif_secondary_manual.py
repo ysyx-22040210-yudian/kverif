@@ -73,8 +73,8 @@ OUT_DIR = ROOT / "output" / "pdf"
 TMP_DIR = ROOT / "tmp" / "pdfs" / "kverif_secondary_manual"
 OUT_PDF = OUT_DIR / "KVerif_Secondary_Development_Manual.pdf"
 AUDIT_JSON = OUT_DIR / "KVerif_Secondary_Development_Manual.audit.json"
-VERSION = "1.0"
-PUBLICATION_DATE = "2026-07-30"
+VERSION = "1.1"
+PUBLICATION_DATE = "2026-08-01"
 KDEBUG_BIN = "/home/host/kverif/tools/kdebug"
 KCOV_BIN = "/home/host/kverif/tools/kcov"
 
@@ -431,7 +431,7 @@ class ManualDocTemplate(BaseDocTemplate):
 
     def _cover_page(self, canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setTitle("KVerif 二次开发与命令参考手册")
+        canvas.setTitle("KVerif 新手上手与二次开发手册")
         canvas.setAuthor("KVerif Project")
         canvas.setSubject("KVerif 命令行调用与二次开发参考")
         canvas.setFillColor(TEAL_DARK)
@@ -449,7 +449,7 @@ class ManualDocTemplate(BaseDocTemplate):
         canvas.line(LEFT, PAGE_H - 12.5 * mm, PAGE_W - RIGHT, PAGE_H - 12.5 * mm)
         canvas.setFont(FONT_BOLD, 7.4)
         canvas.setFillColor(TEAL_DARK)
-        canvas.drawString(LEFT, PAGE_H - 9.5 * mm, "KVERIF / 二次开发与命令参考手册")
+        canvas.drawString(LEFT, PAGE_H - 9.5 * mm, "KVERIF / 新手上手与二次开发手册")
         canvas.setFont(FONT, 7.2)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 9.5 * mm, f"v{VERSION}  |  {PUBLICATION_DATE}")
@@ -840,9 +840,10 @@ module npi_fixture_top;
     .BIAS(12'h001)
   ) u_alu (...);
 endmodule""", "压测所用 RTL 摘录"))
+    bias_default = mono("BIAS='0")
     story.append(callout(
         "默认值和实例实际值不同",
-        f"模块定义中的默认值是 {mono('WIDTH=8')}、{mono("BIAS='0")}；实例覆盖参数后，VM 实测值变为 "
+        f"模块定义中的默认值是 {mono('WIDTH=8')}、{bias_default}；实例覆盖参数后，VM 实测值变为 "
         f"{mono('WIDTH=12')}、{mono('BIAS=1')}，并推导出 {mono('RESULT_WIDTH=12')}。"
         "分析具体实例时，应使用工具返回的实例实际值，而不能只看模块定义中的默认值。",
         "warn",
@@ -2375,7 +2376,7 @@ def make_appendices(story: list[Any], actions: list[dict[str, Any]]) -> None:
     story.append(heading("本手册包含哪些内容", 2, "coverage-statement"))
     story.append(callout(
         "本版覆盖",
-        f"10 类对外工具、{len(actions)} 项可用的 KDebug 操作、全部 KDebug 快捷命令和 key=value 通用参数；"
+        f"{len(TOOL_MATRIX)} 类对外工具、{len(actions)} 项可用的 KDebug 操作、全部 KDebug 快捷命令和 key=value 通用参数；"
         f"22 条 KCov 命令，以及 KBit、KEntry、KLoc、KSVA、KBerif、KEDA Runner、Loop 客户端的命令；"
         f"{len(parse_mcp_tools())} 个 MCP 工具的参数；{len(WORKFLOW_COVERAGE)} 个按任务编排的 NPI 教程；"
         f"{len(NPI_WORKFLOW_ACTIONS)} 项 NPI 操作和 {len(MODULE_OBJECT_KINDS)} 类模块对象；"
@@ -2388,6 +2389,108 @@ def make_appendices(story: list[Any], actions: list[dict[str, Any]]) -> None:
     ))
 
 
+def make_beginner_quickstart(story: list[Any]) -> None:
+    story.append(heading("第一次使用：10 分钟拿到真实结果", 1, "beginner-quickstart"))
+    story.append(callout(
+        "先跑通，再查参数",
+        "第一次使用时，不需要先理解 action、target、args 或 NPI 对象。先运行环境检查和随库教程，"
+        "看到 PASS 并找到 result.json、tool-response.json、replay.sh 后，再查询自己的项目。",
+        "info",
+    ))
+    story.append(heading("先运行这三条命令", 2, "beginner-three-commands"))
+    story.extend(code_block("""su - host
+export KVERIF_HOME=/home/host/kverif
+export PATH="$KVERIF_HOME/tools:$PATH"
+
+/home/host/kverif/tools/kverif doctor
+/home/host/kverif/tools/kverif tutorial waveform
+/home/host/kverif/tools/kverif tasks""", "普通用户 host"))
+    story.append(data_table(["命令", "它检查什么", "成功时看到什么"], [
+        (mono("kverif doctor"), "用户、Python、KDebug、Verdi、Tcl NPI 和随库文件。", "最后是 PASS，required failures 为 0。"),
+        (mono("kverif tutorial waveform"), "真实 Verdi 2018 FSDB 能否被读取和校验。", "变化 5 次、unknown 0、Tutorial checks: PASS。"),
+        (mono("kverif tasks"), "当前提供哪些任务式入口。", "列出模块检查、波形检查、教程和脚手架。"),
+    ], [46 * mm, 72 * mm, CONTENT_W - 118 * mm]))
+    story.append(heading("每次任务会留下什么", 2, "beginner-artifacts"))
+    story.append(data_table(["文件", "给谁看", "内容"], [
+        (mono("result.json"), "验证人员和上层脚本", "整理后的结论和常用字段。"),
+        (mono("tool-response.json"), "需要追查细节的人", "KDebug 返回的原始 JSON，保留底层事实。"),
+        (mono("replay.sh"), "复现问题的人", "本次实际使用的底层命令，可直接重放。"),
+        (mono("error.json"), "失败排查", "失败码、提示、相关诊断和产物路径。只在失败时生成。"),
+    ], [42 * mm, 40 * mm, CONTENT_W - 82 * mm]))
+
+    story.append(heading("第一次分析模块", 2, "beginner-module"))
+    story.append(p(
+        "模块查询需要 VCS 生成的 simv.daidir。它适合回答模块实例在哪里、parameter 展开后是多少、"
+        "端口方向和连接是什么。FSDB 只有波形值，不能替代 simv.daidir 做这类设计查询。"
+    ))
+    story.extend(code_block("""# 先用随库的参数化模块完成教程
+/home/host/kverif/tools/kverif doctor --require-vcs
+/home/host/kverif/tools/kverif tutorial module-inspect \
+  --out /home/host/kverif_tutorial
+
+# 再查询自己的设计
+/home/host/kverif/tools/kverif inspect-module \
+  --input /data/project/build/simv.daidir \
+  --module tb_top.dut.u_core.u_alu \
+  --out /data/project/reports/alu-module""", "模块检查"))
+    story.extend(code_block("""PASS  module inspection completed
+
+Module path: npi_fixture_top.u_alu
+Definition: npi_fixture_alu
+Parameters: 3
+  - WIDTH = 12
+  - BIAS = 1
+  - RESULT_WIDTH = 12 (localparam)
+Ports: 3
+  - input  lhs                  [12 bits]
+  - input  rhs                  [12 bits]
+  - output result               [12 bits]
+Tutorial checks: PASS""", "教程期望输出"))
+    story.append(callout(
+        "module 要填完整实例路径",
+        "例如 tb_top.dut.u_core.u_alu，而不是 RTL 中的 ALU 定义名。只想检查生成的命令时，"
+        "增加 --dry-run --show-command，不会启动 Verdi。",
+        "warn",
+    ))
+
+    story.append(heading("第一次分析波形", 2, "beginner-waveform"))
+    story.extend(code_block("""/home/host/kverif/tools/kverif trace-signal \
+  --input /data/project/run/waves.fsdb \
+  --signal tb_top.dut.req_valid \
+  --begin 0ns --end 2us \
+  --format hex --max-rows 500 \
+  --out /data/project/reports/req-valid""", "波形检查"))
+    story.extend(code_block("""PASS  waveform inspection completed
+
+Signal: tb_top.dut.req_valid
+Window: 0ns .. 2us
+Changes: 14
+Unknown values: 0
+Truncated: no""", "输出示例"))
+    story.append(p(
+        "终端只显示最常用的结论。脚本需要详细跳变时读取 tool-response.json；不要用 grep 从终端文字猜 JSON 字段。"
+    ))
+
+    story.append(heading("从可运行脚本开始二次开发", 2, "beginner-scaffold"))
+    story.extend(code_block("""/home/host/kverif/tools/kverif new signal-check \
+  --lang perl \
+  --out /data/project/tools/check_req_valid
+
+cd /data/project/tools/check_req_valid
+KVERIF_HOME=/home/host/kverif bash ./example.sh""", "生成并运行"))
+    story.append(data_table(["--lang", "生成入口", "怎样处理结果"], [
+        (mono("sh"), mono("sh/signal_health.sh"), "调用 KDebug，再用独立 JSON helper 生成结论。"),
+        (mono("csh"), mono("csh/signal_health.csh"), "适合传统 EDA 环境，仍只调用可执行文件。"),
+        (mono("perl"), mono("perl/signal_health.pl"), "只使用 Perl 核心模块处理工具输出。"),
+        (mono("python"), mono("py/signal_health.py"), "只使用 subprocess 和 json 标准库，不导入 KVerif。"),
+    ], [25 * mm, 55 * mm, CONTENT_W - 80 * mm]))
+    story.append(callout(
+        "二次开发边界没有改变",
+        "生成目录不包含 NPI Tcl、NPI C/C++ 头文件，也不导入 KVerif 内部模块。业务脚本只运行 tools 目录中的命令。",
+        "note",
+    ))
+
+
 def build_story(actions: list[dict[str, Any]], tests: dict[str, str], stress: dict[str, Any]) -> list[Any]:
     story: list[Any] = []
     category_counts = Counter(item["category"] for item in actions)
@@ -2396,8 +2499,8 @@ def build_story(actions: list[dict[str, Any]], tests: dict[str, str], stress: di
         Spacer(1, 29 * mm),
         p("KVERIF", "CoverMeta"),
         Spacer(1, 8 * mm),
-        p("二次开发与命令参考手册", "CoverTitle"),
-        p("只调用命令行即可完成集成", "CoverSub"),
+        p("新手上手与二次开发手册", "CoverTitle"),
+        p("先用三条命令跑通，再按任务查表", "CoverSub"),
         Spacer(1, 12 * mm),
         HRFlowable(width="68%", thickness=2, color=AMBER, hAlign="LEFT"),
         Spacer(1, 8 * mm),
@@ -2411,7 +2514,7 @@ def build_story(actions: list[dict[str, Any]], tests: dict[str, str], stress: di
     cover_stats = Table([
         [p(f"<b>{len(actions)}</b><br/>项 KDebug 操作", "CoverMeta"),
          p("<b>22</b><br/>条 KCov 命令", "CoverMeta"),
-         p("<b>10</b><br/>类对外工具", "CoverMeta")],
+         p(f"<b>{len(TOOL_MATRIX)}</b><br/>类对外工具", "CoverMeta")],
     ], colWidths=[48 * mm] * 3)
     cover_stats.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), HexColor("#0A5960")),
@@ -2463,6 +2566,8 @@ def build_story(actions: list[dict[str, Any]], tests: dict[str, str], stress: di
     toc.dotsMinLevel = 0
     story.extend([toc, PageBreakIfNotEmpty()])
 
+    make_beginner_quickstart(story)
+
     story.append(heading("按任务选择工具", 1, "choose-tool"))
     story.append(p(
         "选工具时先看手里有什么文件，再看要解决什么问题。查设计或波形用 KDebug；查覆盖率用 KCov；"
@@ -2488,20 +2593,21 @@ def build_story(actions: list[dict[str, Any]], tests: dict[str, str], stress: di
     story.extend(code_block("""ssh host@192.168.31.116
 export KVERIF_HOME=/home/host/kverif
 export PATH="$KVERIF_HOME/tools:$PATH"
+export PYTHON=/usr/local/bin/python3.8
 export VERDI_HOME=/home/synopsys/verdi/Verdi_O-2018.09-SP2
-export NPIL1_PATH="$VERDI_HOME/share/NPI/L1/TCL"
-export LD_LIBRARY_PATH="$VERDI_HOME/share/NPI/lib/LINUX64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export VCS_HOME=/home/synopsys/vcs/O-2018.09-SP2
 
-/home/host/kverif/tools/kdebug actions --json
-/home/host/kverif/tools/kcov actions --json
-/home/host/kverif/tools/kbit conv "8'hff" --json""", "Bash / Zsh"))
+/home/host/kverif/tools/kverif doctor
+/home/host/kverif/tools/kverif tutorial waveform
+/home/host/kverif/tools/kverif tasks""", "Bash / Zsh"))
     story.extend(code_block("""setenv KVERIF_HOME /home/host/kverif
 setenv PATH "$KVERIF_HOME/tools:$PATH"
 setenv VERDI_HOME /home/synopsys/verdi/Verdi_O-2018.09-SP2
-setenv NPIL1_PATH "$VERDI_HOME/share/NPI/L1/TCL"
-setenv LD_LIBRARY_PATH "$VERDI_HOME/share/NPI/lib/LINUX64:$LD_LIBRARY_PATH"
+setenv PYTHON /usr/local/bin/python3.8
+setenv VCS_HOME /home/synopsys/vcs/O-2018.09-SP2
 
-/home/host/kverif/tools/kdebug actions --json""", "csh / tcsh"))
+/home/host/kverif/tools/kverif doctor
+/home/host/kverif/tools/kverif tutorial waveform""", "csh / tcsh"))
     story.append(heading("复制到另一台机器前要知道什么", 2, "deployment-boundary"))
     story.append(callout(
         "不能只复制一个 kdebug 文件",
@@ -2510,6 +2616,8 @@ setenv LD_LIBRARY_PATH "$VERDI_HOME/share/NPI/lib/LINUX64:$LD_LIBRARY_PATH"
         "warn",
     ))
     story.append(data_table(["检查", "命令", "期望"], [
+        ("新手环境检查", mono("/home/host/kverif/tools/kverif doctor"), "required failures 为 0。"),
+        ("真实 FSDB 教程", mono("... kverif tutorial waveform"), "Tutorial checks: PASS。"),
         ("KDebug 操作列表", mono("/home/host/kverif/tools/kdebug actions --json"), "ok=true，并列出当前支持的操作。"),
         ("KDebug NPI", mono("... kdebug --json action npi.capabilities"), "列出当前 Verdi 能找到哪些 NPI 命令。"),
         ("KCov 假数据", mono("... kcov cov-holes --vdb fake --fake --json"), "无需 EDA 许可证即可检查命令行是否可用。"),
@@ -2678,8 +2786,17 @@ def validate_pdf(pdf_path: Path, actions: list[dict[str, Any]]) -> dict[str, Any
     unexpected_npi_actions = sorted(workflow_actions - NPI_WORKFLOW_ACTIONS)
     uncovered_module_kinds = sorted(MODULE_OBJECT_KINDS - workflow_kinds)
     unexpected_module_kinds = sorted(workflow_kinds - MODULE_OBJECT_KINDS)
-    expected_tools = ["KDebug", "KCov", "KBit", "KEntry", "KLoc", "KSVA", "KBerif", "KEDA Runner", "Loop Wrapper", "KVerif MCP"]
+    expected_tools = ["KVerif Task CLI", "KDebug", "KCov", "KBit", "KEntry", "KLoc", "KSVA", "KBerif", "KEDA Runner", "Loop Wrapper", "KVerif MCP"]
     missing_tools = [tool for tool in expected_tools if tool not in all_text]
+    beginner_commands = [
+        "kverif doctor",
+        "kverif tutorial waveform",
+        "kverif tutorial module-inspect",
+        "kverif inspect-module",
+        "kverif trace-signal",
+        "kverif new signal-check",
+    ]
+    missing_beginner_commands = [command for command in beginner_commands if command not in all_text]
     forbidden_unicode = sorted({
         f"U+{ord(char):04X}" for char in all_text
         if char == "\u200b" or 0x2010 <= ord(char) <= 0x2015
@@ -2731,6 +2848,9 @@ def validate_pdf(pdf_path: Path, actions: list[dict[str, Any]]) -> dict[str, Any
         "module_object_kinds_mapped": len(MODULE_OBJECT_KINDS) - len(uncovered_module_kinds),
         "missing_actions": missing_actions,
         "missing_tools": missing_tools,
+        "beginner_commands_expected": len(beginner_commands),
+        "beginner_commands_present": len(beginner_commands) - len(missing_beginner_commands),
+        "missing_beginner_commands": missing_beginner_commands,
         "missing_workflow_titles": missing_workflow_titles,
         "unknown_workflow_actions": unknown_workflow_actions,
         "uncovered_npi_actions": uncovered_npi_actions,
@@ -2748,6 +2868,7 @@ def validate_pdf(pdf_path: Path, actions: list[dict[str, Any]]) -> dict[str, Any
         "checks": {
             "all_actions_present": not missing_actions,
             "all_tool_groups_present": not missing_tools,
+            "all_beginner_commands_present": not missing_beginner_commands,
             "all_task_workflows_present": not missing_workflow_titles,
             "all_workflow_actions_exist": not unknown_workflow_actions,
             "all_npi_actions_mapped_to_workflows": not uncovered_npi_actions and not unexpected_npi_actions,
@@ -2784,9 +2905,9 @@ def main() -> int:
     doc = ManualDocTemplate(
         str(OUT_PDF), pagesize=A4,
         leftMargin=LEFT, rightMargin=RIGHT, topMargin=TOP, bottomMargin=BOTTOM,
-        title="KVerif 二次开发与命令参考手册",
+        title="KVerif 新手上手与二次开发手册",
         author="KVerif Project",
-        subject="KVerif 二次开发、命令参数与实测示例",
+        subject="KVerif 新手教程、二次开发、命令参数与实测示例",
     )
     story = build_story(actions, tests, stress)
     doc.multiBuild(story)

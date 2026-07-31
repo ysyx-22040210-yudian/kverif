@@ -28,7 +28,7 @@ example 和 contract test 迁移使用。状态定义：
 | `schema` | builtin | stable | none | top-level catalog | regression |
 | `actions` | builtin | stable | none | top-level catalog | regression |
 | `batch` | builtin | stable | none | top-level dispatcher | partial |
-| `npi.capabilities` | builtin | experimental | none | Verdi 2018 Tcl NPI capability probe | VM PASS 2026-07-24 |
+| `npi.capabilities` | builtin | experimental | none | Verdi 2018 Tcl NPI capability probe | VM stress PASS 10/10 2026-07-29 |
 | `session.open` | session | stable | any | dispatcher + backend session managers | regression |
 | `session.list` | session | stable | session | unified engine session registry | partial |
 | `session.doctor` | session | stable | session | dispatcher + backend health | partial |
@@ -61,25 +61,25 @@ example 和 contract test 迁移使用。状态定义：
 | `port.trace` | design | stable | design | design engine forward | partial |
 | `instance.map` | design | stable | design | design engine forward | partial |
 | `interface.resolve` | design | stable | design | design engine forward | partial |
-| `language.resolve` | design | experimental | design | Tcl NPI Language Model object lookup and fixed property snapshot | VM PASS 2026-07-28 |
-| `language.iterate` | design | experimental | design | Tcl NPI Language Model typed iterator | VM PASS 2026-07-28 |
-| `language.relate` | design | experimental | design | Tcl NPI Language Model one-to-one relationship lookup | VM PASS 2026-07-28 |
-| `language.value` | design | experimental | design | Tcl NPI Language Model elaborated constant/parameter value | VM PASS 2026-07-28 |
-| `module.objects` | design | experimental | design | Tcl NPI Module Library 15-kind object inventory | VM PASS all 15 kinds 2026-07-28 |
-| `module.find_instances` | design | experimental | design | Tcl NPI module-definition to instance lookup | VM PASS 2026-07-28 |
-| `module.inspect` | design | experimental | design | Tcl NPI aggregate instance/parameter/port/IO/connectivity inspection | VM PASS 2026-07-28 |
-| `netlist.resolve` | design | experimental | design | Tcl NPI Netlist Model lookup | VM PASS 2026-07-24 |
-| `netlist.iterate` | design | experimental | design | Tcl NPI Netlist Model iterator | VM PASS 2026-07-24 |
-| `text.line` | design | experimental | design | Tcl NPI Text Model line lookup | VM PASS 2026-07-24 |
-| `text.words` | design | experimental | design | Tcl NPI Text Model word iterator | VM PASS 2026-07-24 |
-| `text.replace_line` | design | experimental | design | Tcl NPI Text Model copy-on-write edit | VM PASS 2026-07-24 |
-| `dm.add_net` | design | experimental | design | Tcl NPI DM add/write flow | VM PASS 2026-07-24 |
-| `dm.clone_module` | design | experimental | design | Tcl NPI DM clone/write flow | VM PASS 2026-07-24 |
-| `vcs.summary` | design | experimental | design | Tcl NPI VCS Model summary | VM PASS 2026-07-24 |
-| `power.resolve` | design | experimental | design | Tcl NPI Power Model lookup | VM license-blocked 2026-07-24 |
-| `power.list` | design | experimental | design | Tcl NPI Power Model iterator | VM license-blocked 2026-07-24 |
-| `crdb.resolve` | design | experimental | none | Tcl NPI CRDB lookup | VM PASS 2026-07-24 |
-| `crdb.correlates` | design | experimental | none | Tcl NPI CRDB correlation iterator | VM PASS 2026-07-24 |
+| `language.resolve` | design | experimental | design | Tcl NPI Language Model object lookup and fixed property snapshot | VM stress PASS 10/10 2026-07-29 |
+| `language.iterate` | design | experimental | design | Tcl NPI Language Model typed iterator | VM stress PASS 10/10 2026-07-29 |
+| `language.relate` | design | experimental | design | Tcl NPI Language Model one-to-one relationship lookup | VM stress PASS 10/10 2026-07-29 |
+| `language.value` | design | experimental | design | Tcl NPI Language Model elaborated constant/parameter value | VM stress PASS 10/10 2026-07-29 |
+| `module.objects` | design | experimental | design | Tcl NPI Module Library 15-kind object inventory | VM stress PASS 150/150 (15 kinds) 2026-07-29 |
+| `module.find_instances` | design | experimental | design | Tcl NPI module-definition to instance lookup | VM stress PASS 10/10 2026-07-29 |
+| `module.inspect` | design | experimental | design | Tcl NPI aggregate instance/parameter/port/IO/connectivity inspection | VM stress PASS 10/10 2026-07-29 |
+| `netlist.resolve` | design | experimental | design | Tcl NPI Netlist Model lookup | VM stress PASS 10/10 2026-07-29 |
+| `netlist.iterate` | design | experimental | design | Tcl NPI Netlist Model iterator | VM stress PASS 10/10 2026-07-29 |
+| `text.line` | design | experimental | design | Tcl NPI Text Model line lookup | VM stress PASS 10/10 2026-07-29 |
+| `text.words` | design | experimental | design | Tcl NPI Text Model word iterator | VM stress PASS 10/10 2026-07-29 |
+| `text.replace_line` | design | experimental | design | Tcl NPI Text Model copy-on-write edit | VM stress PASS 10/10 2026-07-29 |
+| `dm.add_net` | design | experimental | design | Tcl NPI DM add/write flow | VM stress PASS 10/10 2026-07-29 |
+| `dm.clone_module` | design | experimental | design | Tcl NPI DM clone/write flow | VM stress PASS 10/10 2026-07-29 |
+| `vcs.summary` | design | experimental | design | Tcl NPI VCS Model summary | VM stress PASS 10/10 2026-07-29 |
+| `power.resolve` | design | experimental | design | Tcl NPI Power Model lookup | VM stress 0 PASS / 10 license-blocked 2026-07-29 |
+| `power.list` | design | experimental | design | Tcl NPI Power Model iterator | VM stress 0 PASS / 10 license-blocked 2026-07-29 |
+| `crdb.resolve` | design | experimental | none | Tcl NPI CRDB lookup | VM stress PASS 10/10 2026-07-29 |
+| `crdb.correlates` | design | experimental | none | Tcl NPI CRDB correlation iterator | VM stress PASS 10/10 2026-07-29 |
 
 ## Waveform Actions
 
@@ -139,8 +139,8 @@ example 和 contract test 迁移使用。状态定义：
 | `stream.validate` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.query` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.export` | waveform | stable | waveform | waveform engine forward | synthetic |
-| `transaction.writer.create` | waveform | experimental | none | Tcl NPI transaction FSDB writer | VM PASS 2026-07-24 |
-| `fsdb.writer.create_scope` | waveform | experimental | none | Tcl NPI signal FSDB hierarchy writer | VM PASS 2026-07-24 |
+| `transaction.writer.create` | waveform | experimental | none | Tcl NPI transaction FSDB writer | VM stress PASS 10/10 2026-07-29 |
+| `fsdb.writer.create_scope` | waveform | experimental | none | Tcl NPI signal FSDB hierarchy writer | VM stress PASS 10/10 + reopen 10/10 2026-07-29 |
 
 ## Removed Actions
 

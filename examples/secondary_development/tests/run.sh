@@ -25,6 +25,9 @@ for command_name in bash perl "$json_python"; do
   }
 done
 
+"$json_python" "$script_dir/check_cli_only_boundary.py"
+bash "$script_dir/check_wrapper_eda_env.sh"
+
 test -s "$fixture_fsdb"
 test -f "$fixture/rtl/kverif_handshake_dut.sv"
 test -f "$fixture/tb/tb_kverif_handshake.sv"

@@ -10,6 +10,7 @@
 - [适用场景](#适用场景)
 - [仓库结构](#仓库结构)
 - [工具矩阵](#工具矩阵)
+- [新手 10 分钟上手](doc/quickstart.md)
 - [快速开始](#快速开始)
 - [配图与截图建议](#配图与截图建议)
 - [核心概念](#核心概念)
@@ -99,6 +100,7 @@ flowchart LR
 ```text
 kverif/
   tools/                 # 用户优先使用的统一命令入口和 wrapper
+  kverif_cli/            # 新手任务层：doctor、tutorial、模块/波形任务和脚手架
   kdebug/                # 设计数据库和波形数据库调试工具，直接 NPI 访问走 Tcl 后端
   kcov/                  # VCS/Verdi coverage database 查询，直接 NPI 访问走 Tcl 后端
   kbit/                  # bit/literal/slice/expression 计算器
@@ -118,7 +120,7 @@ kverif/
   benchmark_results/     # 已纳入版本管理的 benchmark 结果快照
 ```
 
-用户通常不需要直接进入每个工具的内部目录。推荐先把 `tools/` 加入 `PATH`，之后直接使用 `kdebug`、`kbit`、`kentry`、`kloc`、`kberif`、`ksva`、`kcov` 和 `keda-runner`。
+用户通常不需要直接进入每个工具的内部目录。新人推荐先使用统一入口 `kverif`；熟悉任务后再直接使用 `kdebug`、`kbit`、`kentry`、`kloc`、`kberif`、`ksva`、`kcov` 和 `keda-runner`。
 
 `benchmarks/kdebug_repair_benchmark/` 是受版本管理的 benchmark 协议、runner、证据采集器和模板。实际 suite、repair workdir、FSDB、截图与报告仍属于运行产物，不应整目录混入源码提交。当前工作区还可能出现 `benchmark_artifacts/`、`reports/`、`tmp/` 和 `.pytest_cache/` 等本地缓存或草稿，提交前需要按任务要求单独挑选。
 
@@ -127,6 +129,7 @@ kverif/
 | 目录 | 含义 | 用户是否常用 |
 | --- | --- | --- |
 | `tools/` | 所有工具的稳定命令入口，负责设置必要环境并调用对应模块 | 是，推荐加入 `PATH` |
+| `kverif_cli/` | 面向新人的任务式入口；只编排公开可执行命令，不包含新的 NPI 实现 | 新人首先使用 |
 | `kdebug/` | 设计/波形调试主工具；public CLI 是 C++ 前端，Verdi/FSDB/NPI 查询统一委托给 `tcl_engine/kdebug_npi.tcl` | 是 |
 | `kcov/` | coverage 查询工具；Python 负责协议、过滤、导出，真实 VDB/NPI 查询统一委托给 `tcl_engine/kcov_npi.tcl` | 是 |
 | `kbit/` | Verilog/SystemVerilog literal、slice、mask、表达式计算 | 是 |
@@ -191,6 +194,7 @@ manifest；在这些步骤全部通过前不会调用模型 API。
 
 | 工具 | 解决的问题 | 主要输入 | 主要输出 | 是否依赖 EDA |
 | --- | --- | --- | --- | --- |
+| [`kverif`](doc/quickstart.md) | 环境自检、真实教程和常见验证任务的简化入口 | FSDB、`simv.daidir` 或随库 fixture | 人类结论、原始 JSON、`replay.sh` | 取决于具体任务 |
 | [`kdebug`](kdebug/README.md) | 设计和波形事实查询 | `simv.daidir`、FSDB、参数式查询命令 | driver/load/value/event/trace evidence | 真实查询需要 Verdi/VCS/FSDB |
 | [`kbit`](kbit/README.md) | bit、literal、slice、表达式计算 | literal、变量、表达式 | 规范化值、比较结果、解释 | 否 |
 | [`kentry`](kentry/README.md) | 多拍 entry 字段解析 | YAML/JSON config、fragments | field slices、provenance | 否 |
@@ -203,6 +207,18 @@ manifest；在这些步骤全部通过前不会调用模型 API。
 | [`keda-runner`](keda_runner/README.md) | 受控执行 EDA 命令 | allowlist config、action/target | stdout/stderr、exit code、日志 | 取决于命令 |
 
 ## 快速开始
+
+第一次使用时不要从 action 参数表开始。先按[新手 10 分钟上手](doc/quickstart.md)运行：
+
+```bash
+/home/host/kverif/tools/kverif doctor
+/home/host/kverif/tools/kverif tutorial waveform
+/home/host/kverif/tools/kverif tasks
+```
+
+`kverif` 是任务式入口：默认显示人能直接阅读的结论，同时保存原始工具 JSON 和
+`replay.sh`。它不替换 `kdebug/kcov`，也没有新增一套 NPI 实现；熟悉后仍可直接调用底层
+CLI。完整参数手册不再是第一次成功运行的前置条件。
 
 ### 1. 准备环境
 
@@ -312,8 +328,12 @@ kdebug actions --json
 ```bash
 export VERDI_HOME=/path/to/verdi
 export VCS_HOME=/path/to/vcs
-export LD_LIBRARY_PATH="$VERDI_HOME/share/NPI/lib/LINUX64:$LD_LIBRARY_PATH"
+export PATH="$VERDI_HOME/bin:$VCS_HOME/bin:/path/to/kverif/tools:$PATH"
 ```
+
+二次开发脚本不设置 `NPIL1_PATH`，也不拼 NPI `LD_LIBRARY_PATH`。如果只把 `verdi` 放进
+`PATH`，或者设置 `VERDI_HOME`，`tools/kdebug` 和 `tools/kcov` 会在可执行入口内部完成
+NPI Tcl/library path 推导。
 
 Verdi 2018 VM 上的常用设置示例：
 
@@ -1645,6 +1665,21 @@ kverif 不要求二次开发者安装或导入语言 SDK。Bash、csh、Perl、P
 
 调用脚本不应导入 kdebug、kcov、MCP 或 Tcl backend 的内部模块。真实 NPI 查询仍
 由工具内部 Tcl backend 完成，调用方只消费稳定 CLI。
+
+这是强制的 executable boundary：下游仓库只保存业务脚本和工具 JSON 结果，不复制
+`kdebug_npi.tcl/kcov_npi.tcl`，不直接调用 `npi_*`，不包含 `npi.h`，也不设置
+`NPIL1_PATH` 或 NPI 专用 library path。模块例化、parameter、port/IO、连线、波形和
+coverage 能力均通过可执行命令暴露。例如：
+
+```bash
+/opt/kverif/tools/kdebug --json action module.inspect \
+  --daidir /data/build/simv.daidir \
+  --arg module=top.u_alu \
+  --arg 'sections=["instances","parameters","ports","io","nets"]'
+```
+
+调用设备只需有完整 KVerif 安装和兼容 EDA/license；业务代码无需安装 NPI SDK。
+CLI-only 规则由 `examples/secondary_development/tests/check_cli_only_boundary.py` 自动审计。
 
 ### 随库真实 FSDB、RTL 和信号
 

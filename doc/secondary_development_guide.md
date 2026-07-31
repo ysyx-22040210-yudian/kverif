@@ -1,8 +1,16 @@
 # kverif CLI 二次开发使用指导手册
 
+> **第一次使用请先停在这里。** 如果还没有成功跑过一次 KVerif，不要从本手册的 action
+> 和参数表开始。先完成 [`quickstart.md`](quickstart.md) 中的 `doctor`、真实 FSDB tutorial
+> 和模块 tutorial。本手册用于教程通过后的脚本开发与字段查阅。
+
 本文面向需要用 Shell、Perl、Python、Ruby、Go、CI 流水线或内部平台调用
 kverif 的验证工程师。二次开发不使用语言 SDK，也不导入 kverif 内部模块。
 调用方只需要执行工具命令、传入参数，并解析 `--json` 输出。
+
+新手可以先调用 `/home/host/kverif/tools/kverif` 的任务式命令。该入口会把常用参数翻译为
+现有 `kdebug` 命令，并同时保存简化结论、原始 JSON 和重放脚本；它不会改变本手册定义的
+CLI-only 契约。
 
 典型用途包括：
 
@@ -153,6 +161,43 @@ kverif 对外稳定接口由四部分组成：
 
 只要命令、参数和 JSON action 契约保持兼容，调用脚本可以使用任何语言。
 
+### 1.1 强制 CLI-only 集成边界
+
+二次开发者面对的是已安装的 KVerif 可执行文件，不是 NPI 开发包。调用方仓库中不应出现
+KDebug/KCov 的 Tcl backend、NPI C/C++ 头文件或对内部 Python 模块的 import。即使要做
+module 例化、parameter 有效值、port 方向或 high/low connection 查询，也只组合
+`kdebug action` 参数并解析 JSON。
+
+```text
+验证项目仓库                         已安装的 /opt/kverif
+  scripts/module_audit.sh  ------>    tools/kdebug
+  reports/*.json           <------    JSON response + exit code
+  不含 *.tcl / npi.h                  私有 Tcl NPI backend -> Verdi
+```
+
+| 边界项 | 调用方合同 | KVerif 内部责任 |
+| --- | --- | --- |
+| 功能发现 | 执行 `kdebug --json actions` | 返回当前安装版本的 action catalog |
+| 参数发现 | 执行 `kdebug --json schema --action NAME --kind request` | 维护 action schema 和兼容性 |
+| 数据查询 | 执行参数式命令或传 JSON request | 打开 FSDB/KDB/VDB，调用 Tcl NPI，关闭资源 |
+| 环境路径 | 只保证 `verdi` 在 `PATH`，或设置 `VERDI_HOME` | 自动推导 `NPIL1_PATH` 和 NPI library path |
+| 错误处理 | 检查进程退出码和 response 顶层 `ok/error` | 把 Verdi/license/NPI 错误转换为结构化错误 |
+| 二次结论 | 用任意语言处理 `data/summary` | 不耦合用户项目门禁和报告策略 |
+
+禁止在下游脚本中使用以下做法：
+
+```text
+source .../kdebug_npi.tcl
+verdi -play custom_npi.tcl
+#include <npi.h>
+import kdebug.tcl_engine
+export NPIL1_PATH=...
+```
+
+这些内容只属于 KVerif 维护者。普通验证人员升级工具时替换 KVerif 安装即可，不需要同步、
+编译或调试 NPI 代码。Bash/csh/Perl/Python 示例的静态门禁位于
+`examples/secondary_development/tests/check_cli_only_boundary.py`。
+
 ## 2. 架构与边界
 
 ```mermaid
@@ -169,7 +214,7 @@ flowchart LR
 
 | 层 | 负责 | 不负责 |
 | --- | --- | --- |
-| 项目脚本 | 项目规则、阈值、报告路径、重试和退出码 | NPI 数据访问 |
+| 项目脚本 | 调用可执行文件、项目规则、阈值、报告路径、重试和退出码 | NPI 数据访问、Tcl backend、内部模块 import |
 | kverif CLI | 参数校验、JSON 契约、session、过滤、导出 | 项目专有准入策略 |
 | Tcl backend | 真实 FSDB/KDB/VDB 查询 | 项目流程编排 |
 | MCP | AI Agent 工具适配 | 普通外部脚本的必要依赖 |
@@ -2180,6 +2225,34 @@ harness 会执行以下真实步骤：
 `license_blocked_actions=["power.list","power.resolve"]`。以后许可证补齐后，这两个 action
 应直接变为 `ok=true`，无需修改 harness。仓库归档证据见
 `kdebug/tests/vm/npi_actions/evidence/vm-summary.json`。
+
+### 13.8 Verdi 2018 NPI action 重复压测
+
+13.7 的 `run.sh` 是逐 action 单次功能测试，不应作为压测次数。重复压测使用
+`stress.sh`，输出目录必须事先不存在：
+
+```bash
+id -un
+# 期望: host
+
+KDEBUG_STRESS_ITERATIONS=10 KDEBUG_STRESS_PARALLEL=2 \
+KVERIF_HOME=/home/host/kverif \
+KDEBUG_BIN=/home/host/kverif/tools/kdebug \
+bash /home/host/kverif/kdebug/tests/vm/npi_actions/stress.sh \
+  "/home/host/kverif_npi_action_stress_$(date +%Y%m%d_%H%M%S)"
+```
+
+该命令执行 22 个 action；`module.objects` 的 15 个 kind 各算一个独立 case，所以共有
+36 个 case、每个 10 次，即 360 次受测调用。parallel=2 表示同一 case 最多同时运行两个
+public KDebug 进程。harness 不直接调用 Tcl/NPI，不设置 action timeout，并为所有写操作使用
+唯一输出路径。`fsdb.writer.create_scope` 的 10 个输出还分别用 public `scope.list` 重开，
+因此 public CLI 总调用数为 370。
+
+2026-07-29 实测为 340 PASS、20 次 `LICENSE_BLOCKED`、0 次非预期失败，总墙钟
+589.607215 秒。完整功能通过的是 20/22 个 action；`power.resolve/list` 各 10 次都因缺少
+`PowerAwareAnalysis` 被阻塞，不能写成 PASS。逐 action/kind 的次数和耗时见
+`kdebug/tests/vm/npi_actions/evidence/stress-report.md`，机器结果见同目录的
+`stress-summary.json`、`stress-action-results.csv` 和 `stress-results.csv`。
 
 ## 14. 并发与可靠性
 

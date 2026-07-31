@@ -23,3 +23,26 @@ bash /home/host/kverif/kdebug/tests/vm/npi_actions/run.sh \
 `npi_action_vm_test_summary.json`。如果环境缺少某个明确命名的 Synopsys feature，action 会
 记录 `LICENSE_UNAVAILABLE` 并继续执行其他域；这类结果列入 `license_blocked_actions`，不伪装
 成 PASS。2026-07-24 的归档结果位于 `evidence/`。脚本不会读取或记录 API key。
+
+## 重复压测
+
+`run.sh` 是逐项单次功能验证；`stress.sh` 才是重复压测。它将 `module.objects` 的 15 个
+`kind` 分开统计，并为 writer、Text 修改和 DM action 分配唯一输出路径。测试全程只调用
+public `tools/kdebug`，不直接执行 Tcl/NPI。输出目录必须事先不存在。
+
+```bash
+ssh host@192.168.31.116
+
+KDEBUG_STRESS_ITERATIONS=10 KDEBUG_STRESS_PARALLEL=2 \
+KVERIF_HOME=/home/host/kverif \
+KDEBUG_BIN=/home/host/kverif/tools/kdebug \
+bash /home/host/kverif/kdebug/tests/vm/npi_actions/stress.sh \
+  "/home/host/kverif_npi_action_stress_$(date +%Y%m%d_%H%M%S)"
+```
+
+结果包括 `stress-summary.json`、两个 CSV、逐次 `stress-attempts.jsonl`、完整命令以及每次
+stdout/stderr。2026-07-29 的 10 次、2 路并发结果为 360 次受测调用中 340 PASS、20 次
+Power license 阻塞、0 次非预期失败；另有 10 次公开 `scope.list` 重开生成的 FSDB。详细
+逐 action/kind 数据见 [`evidence/stress-report.md`](evidence/stress-report.md)，中文 Word
+报告见 `evidence/KDebug_NPI_VM_Stress_Test_Report_20260729.docx`。Word 报告可由
+`build_stress_report_docx.py` 直接从归档 JSON/CSV 重建。

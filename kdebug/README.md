@@ -40,6 +40,10 @@ kdebug/examples/responses/<action>.basic.json
 
 > **环境要求**：Python 3.11+、GCC 5.0+、可用 Verdi/VCS/FSDB 环境。直接 NPI/FSDB 查询统一通过 `tcl_engine/kdebug_npi.tcl` 在 Verdi batch Tcl 中执行，目标兼容 Verdi **O-2018.09-SP2** 这类较老版本。不要新增或恢复非 Tcl 的直接 NPI engine；如果遇到版本兼容问题，应优先修 Tcl 后端或 Python 请求转换层。
 
+> **二次开发边界**：外部脚本只执行 `tools/kdebug` 并解析 `--json`，不得 source/copy
+> `kdebug_npi.tcl`、调用 `npi_*`、链接 NPI C/C++ 库或导入 KDebug 内部模块。入口会从
+> `VERDI_HOME` 或 `PATH` 自动准备 NPI Tcl/library path，NPI 调试由 KVerif 维护者负责。
+
 ```bash
 tools/kdebug actions
 ```
@@ -892,6 +896,13 @@ VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。20 �
 `LICENSE_UNAVAILABLE`。机器结果见
 [`tests/vm/npi_actions/evidence/vm-summary.json`](tests/vm/npi_actions/evidence/vm-summary.json)，
 完整运行命令见[二次开发手册 13.7](../doc/secondary_development_guide.md#137-verdi-2018-npi-独立-action-全流程)。
+
+2026-07-29 又由 `host` 完成 10 次/项、2 路并发压测：22 个 action 拆为 36 个独立项，
+360 次受测调用得到 340 PASS、20 次 Power license 阻塞、0 次非预期失败，总墙钟
+589.607 秒。`module.objects` 的 15 个 kind 共 150/150 PASS；每个 signal FSDB writer
+输出还由 public `scope.list` 重开。Power 两项不能算功能压测通过，获得
+`PowerAwareAnalysis` license 后仍需重跑。完整命令、逐 action/kind 耗时和机器证据见
+[`tests/vm/npi_actions/evidence/stress-report.md`](tests/vm/npi_actions/evidence/stress-report.md)。
 
 逐字段参数、完整命令、返回数据处理和二次开发边界见
 [二次开发手册 10.2.1](../doc/secondary_development_guide.md#1021-verdi-2018-npi-独立-action)。

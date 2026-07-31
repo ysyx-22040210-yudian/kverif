@@ -286,6 +286,7 @@ KDEBUG_CLI_OPTIONS = [
 
 
 TOOL_MATRIX = [
+    ("KVerif Task CLI", "新手自检与常见任务", "FSDB、simv.daidir 或随库示例", "直接结论、原始 JSON 和可重放命令"),
     ("KDebug", "查设计和波形", "simv.daidir、FSDB、源码、CRDB", "模块、端口、参数、驱动关系、波形值和协议事务"),
     ("KCov", "查覆盖率", "VCS/Verdi VDB", "覆盖率汇总、未覆盖项、设计层次和源码位置"),
     ("KBit", "做位运算", "SV 数值或表达式", "进制转换、切片、拼接、扩展和条件计算"),
