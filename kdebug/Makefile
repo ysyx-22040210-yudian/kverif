@@ -72,12 +72,13 @@ audit-tcl-npi-only:
 	fi
 
 # Tcl NPI backend: keep the public C++ CLI, but run Verdi/NPI through Tcl.
-$(LIBEXEC)/kdebug-engine: tcl_engine/kdebug-engine tcl_engine/kdebug_engine.py tcl_engine/kdebug_npi.tcl
+$(LIBEXEC)/kdebug-engine: tcl_engine/kdebug-engine tcl_engine/kdebug_engine.py tcl_engine/kdebug_npi.tcl tcl_engine/kdebug_port_trace.tcl
 	mkdir -p $(dir $@)
 	mkdir -p $(LIBEXEC)/tcl_engine
 	cp tcl_engine/kdebug-engine $@
 	cp tcl_engine/kdebug_engine.py $(LIBEXEC)/tcl_engine/kdebug_engine.py
 	cp tcl_engine/kdebug_npi.tcl $(LIBEXEC)/tcl_engine/kdebug_npi.tcl
+	cp tcl_engine/kdebug_port_trace.tcl $(LIBEXEC)/tcl_engine/kdebug_port_trace.tcl
 	chmod +x $@ $(LIBEXEC)/tcl_engine/kdebug_engine.py
 
 $(EXE): $(CORE_OBJS) $(APP_OBJS)

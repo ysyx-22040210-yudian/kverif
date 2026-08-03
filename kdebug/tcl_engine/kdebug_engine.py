@@ -682,9 +682,240 @@ def prepare_scope_plan(args, tmpdir):
     return path
 
 
+def prepare_string_batch_plan(args, field, tmpdir, filename):
+    values = args.get(field)
+    if not isinstance(values, list) or not values:
+        raise ValueError("args.%s must be a non-empty array" % field)
+    rows = []
+    for index, value in enumerate(values):
+        if not isinstance(value, str) or not value:
+            raise ValueError("args.%s[%d] must be a non-empty string" % (field, index))
+        rows.append((hex_plan_field(value),))
+    path = os.path.join(tmpdir, filename)
+    write_tsv_plan(path, rows)
+    return path
+
+
+def prepare_optional_string_plan(args, field, tmpdir, filename):
+    values = args.get(field, [])
+    if not isinstance(values, list):
+        raise ValueError("args.%s must be an array" % field)
+    rows = []
+    for index, value in enumerate(values):
+        if not isinstance(value, str) or not value:
+            raise ValueError("args.%s[%d] must be a non-empty string" % (field, index))
+        rows.append((hex_plan_field(value),))
+    path = os.path.join(tmpdir, filename)
+    write_tsv_plan(path, rows)
+    return path
+
+
+def strict_bool_option(options, name, default):
+    if name not in options:
+        return default
+    value = options.get(name)
+    if not isinstance(value, bool):
+        raise ValueError("args.options.%s must be a boolean" % name)
+    return value
+
+
+def nonnegative_limit(limits, name, default):
+    if name not in limits:
+        return default
+    value = limits.get(name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("limits.%s must be an integer" % name)
+    if value < 0:
+        raise ValueError("limits.%s must be >= 0" % name)
+    return value
+
+
+def prepare_port_trace_environment(args, limits, target, tmpdir):
+    module = args.get("module")
+    if not isinstance(module, str) or not module:
+        raise ValueError("args.module must be a non-empty string")
+    daidir = target.get("daidir") or target.get("dbdir")
+    if not isinstance(daidir, str) or not daidir:
+        raise ValueError("target.daidir is required for port.trace_batch")
+
+    supported_args = {"module", "ports", "source", "stop_instances", "options"}
+    unknown_args = sorted(set(args) - supported_args)
+    if unknown_args:
+        raise ValueError("unsupported args field: %s" % unknown_args[0])
+    ports = args.get("ports", [])
+    if not isinstance(ports, list):
+        raise ValueError("args.ports must be an array")
+    if len(ports) > 4096:
+        raise ValueError("args.ports must contain at most 4096 items")
+    port_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(\[[0-9]+(:[0-9]+)?\])?$")
+    for index, port in enumerate(ports):
+        if not isinstance(port, str) or not port_pattern.match(port):
+            raise ValueError("args.ports[%d] is not a valid port or bit-select" % index)
+    if len(set(ports)) != len(ports):
+        raise ValueError("args.ports must not contain duplicates")
+
+    stop_instances = args.get("stop_instances", [])
+    if not isinstance(stop_instances, list):
+        raise ValueError("args.stop_instances must be an array")
+    if len(stop_instances) > 4096:
+        raise ValueError("args.stop_instances must contain at most 4096 items")
+    for index, instance in enumerate(stop_instances):
+        if not isinstance(instance, str) or not instance:
+            raise ValueError("args.stop_instances[%d] must be a non-empty string" % index)
+    if len(set(stop_instances)) != len(stop_instances):
+        raise ValueError("args.stop_instances must not contain duplicates")
+
+    options = args.get("options", {})
+    if not isinstance(options, dict):
+        raise ValueError("args.options must be an object")
+    supported_options = {
+        "source_fallback", "include_full", "include_boundary", "debug"
+    }
+    unknown_options = sorted(set(options) - supported_options)
+    if unknown_options:
+        raise ValueError("unsupported args.options field: %s" % unknown_options[0])
+    source_fallback = strict_bool_option(options, "source_fallback", True)
+    include_full = strict_bool_option(options, "include_full", True)
+    include_boundary = strict_bool_option(options, "include_boundary", True)
+    debug_enabled = strict_bool_option(options, "debug", False)
+    if not include_full and not include_boundary:
+        raise ValueError("args.options must enable include_full or include_boundary")
+
+    source = args.get("source", "")
+    if not isinstance(source, str):
+        raise ValueError("args.source must be a string")
+    source = normalized_path(source)
+    if source and not os.path.isfile(source):
+        raise ValueError("args.source does not exist: %s" % source)
+
+    supported_limits = {
+        "timeout_ms", "max_parent_depth", "max_assign_depth", "max_expr_depth",
+        "max_nodes", "max_edges", "max_api_results", "max_rows"
+    }
+    unknown_limits = sorted(set(limits) - supported_limits)
+    if unknown_limits:
+        raise ValueError("unsupported limits field: %s" % unknown_limits[0])
+    if "timeout_ms" in limits:
+        timeout_ms = nonnegative_limit(limits, "timeout_ms", 0)
+        if timeout_ms == 0:
+            raise ValueError("limits.timeout_ms must be >= 1")
+
+    port_plan = prepare_optional_string_plan(args, "ports", tmpdir, "port-trace-ports.tsv")
+    stop_plan = prepare_optional_string_plan(
+        args, "stop_instances", tmpdir, "port-trace-stop-instances.tsv")
+    return {
+        "KDEBUG_TCL_MODULE": module,
+        "KDEBUG_TCL_PORT_PLAN": port_plan,
+        "KDEBUG_TCL_STOP_INSTANCE_PLAN": stop_plan,
+        "KDEBUG_TCL_SOURCE": source,
+        "KDEBUG_TCL_SOURCE_FALLBACK": "1" if source_fallback else "0",
+        "KDEBUG_TCL_INCLUDE_FULL": "1" if include_full else "0",
+        "KDEBUG_TCL_INCLUDE_BOUNDARY": "1" if include_boundary else "0",
+        "KDEBUG_TCL_TRACE_DEBUG": "1" if debug_enabled else "0",
+        "KDEBUG_TCL_MAX_PARENT_DEPTH": str(nonnegative_limit(
+            limits, "max_parent_depth", 16)),
+        "KDEBUG_TCL_MAX_ASSIGN_DEPTH": str(nonnegative_limit(
+            limits, "max_assign_depth", 2)),
+        "KDEBUG_TCL_MAX_EXPR_DEPTH": str(nonnegative_limit(
+            limits, "max_expr_depth", 1)),
+        "KDEBUG_TCL_MAX_NODES": str(nonnegative_limit(limits, "max_nodes", 20000)),
+        "KDEBUG_TCL_MAX_EDGES": str(nonnegative_limit(limits, "max_edges", 100000)),
+        "KDEBUG_TCL_MAX_API_RESULTS": str(nonnegative_limit(
+            limits, "max_api_results", 20000)),
+        "KDEBUG_TCL_MAX_ROWS": str(nonnegative_limit(limits, "max_rows", 20000)),
+    }
+
+
 def cleanup_tcl_tmp(tmpdir):
     if not os.environ.get("KDEBUG_KEEP_TCL_TMP"):
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def process_ids_with_run_token(run_token):
+    if not run_token or not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
+        return []
+    marker = ("KDEBUG_RUN_TOKEN=" + run_token).encode("utf-8")
+    result = []
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return result
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid == os.getpid():
+            continue
+        try:
+            with open(os.path.join("/proc", entry, "environ"), "rb") as fp:
+                environment = fp.read()
+        except (IOError, OSError):
+            continue
+        if marker in environment.split(b"\0"):
+            result.append(pid)
+    return result
+
+
+def signal_run_token_processes(run_token, signum):
+    signaled = []
+    for pid in process_ids_with_run_token(run_token):
+        try:
+            os.kill(pid, signum)
+            signaled.append(pid)
+        except OSError:
+            pass
+    return signaled
+
+
+def signal_process_group(proc, signum):
+    pid = getattr(proc, "pid", None)
+    if pid is None or not hasattr(os, "killpg"):
+        return False
+    try:
+        os.killpg(pid, signum)
+        return True
+    except OSError:
+        return False
+
+
+def cleanup_run_token_orphans(run_token, grace_seconds=0.5):
+    pids = signal_run_token_processes(run_token, signal.SIGTERM)
+    if not pids:
+        return
+    deadline = time.time() + max(0.0, grace_seconds)
+    while time.time() < deadline:
+        if not process_ids_with_run_token(run_token):
+            return
+        time.sleep(0.05)
+    signal_run_token_processes(run_token, signal.SIGKILL)
+    deadline = time.time() + max(0.0, grace_seconds)
+    while time.time() < deadline and process_ids_with_run_token(run_token):
+        time.sleep(0.05)
+
+
+def terminate_tcl_process_run(proc, run_token, grace_seconds=2.0):
+    signal_process_group(proc, signal.SIGTERM)
+    try:
+        proc.terminate()
+    except (AttributeError, OSError):
+        pass
+    signal_run_token_processes(run_token, signal.SIGTERM)
+    try:
+        stdout, stderr = proc.communicate(timeout=max(0.1, grace_seconds))
+    except subprocess.TimeoutExpired as exc:
+        signal_process_group(proc, signal.SIGKILL)
+        try:
+            proc.kill()
+        except (AttributeError, OSError):
+            pass
+        signal_run_token_processes(run_token, signal.SIGKILL)
+        try:
+            stdout, stderr = proc.communicate(timeout=1.0)
+        except subprocess.TimeoutExpired as final_exc:
+            stdout = final_exc.stdout or exc.stdout or ""
+            stderr = final_exc.stderr or exc.stderr or ""
+    cleanup_run_token_orphans(run_token, grace_seconds=0.5)
+    return stdout or "", stderr or ""
 
 
 def run_tcl_npi(request, state):
@@ -709,6 +940,8 @@ def run_tcl_npi(request, state):
     env["KDEBUG_TCL_REQUEST_JSON"] = req_path
     env["KDEBUG_TCL_RESPONSE_JSON"] = rsp_path
     env["KDEBUG_TCL_ACTION"] = action
+    run_token = "%s:%s" % (tmpdir, fnv1a_hex("%s:%s" % (os.getpid(), time.time())))
+    env["KDEBUG_RUN_TOKEN"] = run_token
     if target.get("fsdb"):
         env["KDEBUG_TCL_FSDB"] = str(target.get("fsdb"))
     if args.get("signal"):
@@ -762,7 +995,12 @@ def run_tcl_npi(request, state):
     env["KDEBUG_TCL_END_TIME_DELTA"] = str(args.get("end_time_delta", 0))
     env["KDEBUG_TCL_STREAM"] = str(args.get("stream", ""))
     try:
-        if action == "transaction.writer.create":
+        if action == "port.trace_batch":
+            env.update(prepare_port_trace_environment(args, limits, target, tmpdir))
+        elif action == "module.inspect_batch":
+            env["KDEBUG_TCL_BATCH_PLAN"] = prepare_string_batch_plan(
+                args, "modules", tmpdir, "inspect-modules.tsv")
+        elif action == "transaction.writer.create":
             transaction_plan, tag_plan, relation_plan = prepare_transaction_plans(args, tmpdir)
             env["KDEBUG_TCL_TRANSACTION_PLAN"] = transaction_plan
             env["KDEBUG_TCL_TAG_PLAN"] = tag_plan
@@ -784,15 +1022,15 @@ def run_tcl_npi(request, state):
 
     cmd = [verdi, "-batch", "-nologo", "-play", tcl_script_path()]
     cmd.extend(design_cli_args)
-    timeout_sec = max(1.0, parse_timeout_ms(request, 120000) / 1000.0)
+    timeout_sec = max(0.001, parse_timeout_ms(request, 120000) / 1000.0)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=env, cwd=verdi_cwd, universal_newlines=True)
+                                env=env, cwd=verdi_cwd, universal_newlines=True,
+                                start_new_session=True)
         try:
             stdout, stderr = proc.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
+            stdout, stderr = terminate_tcl_process_run(proc, run_token)
             cleanup_tcl_tmp(tmpdir)
             return False, {"code": "TCL_NPI_TIMEOUT", "message": "Verdi Tcl action timed out",
                            "stdout": stdout[-4000:], "stderr": stderr[-4000:]}
@@ -800,6 +1038,7 @@ def run_tcl_npi(request, state):
         cleanup_tcl_tmp(tmpdir)
         return False, {"code": "VERDI_EXEC_FAILED", "message": str(exc)}
 
+    cleanup_run_token_orphans(run_token)
     license_error = classify_verdi_license_error(stdout, stderr, proc.returncode)
     if license_error:
         cleanup_tcl_tmp(tmpdir)
@@ -1371,6 +1610,268 @@ def active_driver_chain_action(request, state):
     return True, data
 
 
+def port_trace_is_constant(value):
+    value = str(value or "").strip()
+    if value.startswith("Const:"):
+        return True
+    return bool(
+        re.match(r"^'[01xXzZ?]$", value)
+        or re.match(r"^'[bBoOdDhH][0-9a-fA-F_xXzZ?]+$", value)
+        or re.match(r"^[0-9]+'[sS]?[bBoOdDhH][0-9a-fA-F_xXzZ?]+$", value)
+        or re.match(r"^-?[0-9]+$", value)
+    )
+
+
+def port_trace_constant_semantics(value):
+    text = str(value or "").strip()
+    if text.startswith("Const:"):
+        text = text[len("Const:"):]
+    text = text.replace("_", "").lower()
+    if text in ("0", "'0"):
+        return "bit:0"
+    if text in ("1", "'1"):
+        return "bit:1"
+    match = re.match(r"^(?:[0-9]+)?'s?([bodh])([0-9a-f]+)$", text)
+    if match:
+        try:
+            base = {"b": 2, "o": 8, "d": 10, "h": 16}[match.group(1)]
+            number = int(match.group(2), base)
+            if number in (0, 1):
+                return "bit:%d" % number
+        except (KeyError, ValueError):
+            pass
+    return "literal:" + text
+
+
+def normalize_port_trace_evidence(evidence):
+    normalized = []
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict):
+            continue
+        item = dict(item)
+        fields = item.get("fields") if isinstance(item.get("fields"), dict) else {}
+        role = item.get("role") or fields.get("role", "")
+        value = item.get("value", "")
+        candidate = bool(item.get("effective_candidate", False)) and role == "driver"
+        provenance = item.get("provenance") if isinstance(item.get("provenance"), dict) else {}
+        provenance = dict(provenance)
+        path = provenance.get("path")
+        if not isinstance(path, list):
+            path = [part for part in str(item.get("const_full_path", "")).split("<-") if part]
+        provenance["path"] = path
+        provenance["origin"] = provenance.get("origin", item.get("method", ""))
+        provenance["unconditional"] = candidate
+        item["provenance"] = provenance
+        constant = item.get("constant") if isinstance(item.get("constant"), dict) else {}
+        constant = dict(constant)
+        constant["value"] = constant.get("value", value)
+        constant["effective"] = candidate
+        item["constant"] = constant
+        item["role"] = role
+        item["value"] = value
+        item["effective"] = candidate
+        item["effective_candidate"] = candidate
+        item["port_path"] = item.get("port_path") or fields.get("port_path", "")
+        normalized.append(item)
+    return normalized
+
+
+def guard_port_trace_surfaces(full_rows, boundary_rows, evidence_by_key, errors, rejected):
+    surfaces = {
+        "full": [dict(row) for row in full_rows if isinstance(row, dict)],
+        "boundary": [dict(row) for row in boundary_rows if isinstance(row, dict)],
+    }
+    groups = {}
+    for surface, rows in surfaces.items():
+        for index, row in enumerate(rows):
+            if row.get("role") != "driver":
+                continue
+            key = (str(row.get("inst_full_name", "")), str(row.get("port_name", "")))
+            group = groups.setdefault(key, {"constants": [], "signals": []})
+            signal_name = str(row.get("signal_full_name", ""))
+            if port_trace_is_constant(signal_name):
+                group["constants"].append((surface, index, signal_name, row))
+            elif (signal_name and signal_name != "NO_DRIVER"
+                  and not signal_name.startswith("TRACE_LIMIT_REACHED:")
+                  and not signal_name.startswith("TRACE_STOP:")):
+                group["signals"].append(signal_name)
+
+    rejected_indexes = {"full": set(), "boundary": set()}
+    marker_rows = {"full": [], "boundary": []}
+    error_keys = set(
+        (error.get("code"), error.get("instance"), error.get("port"))
+        for error in errors if isinstance(error, dict)
+    )
+
+    def add_error(code, instance, port, message, values=None):
+        error_key = (code, instance, port)
+        if error_key in error_keys:
+            return
+        error_keys.add(error_key)
+        error = {
+            "scope": "port",
+            "code": code,
+            "message": message,
+            "instance": instance,
+            "port": port,
+        }
+        if values:
+            error["values"] = sorted(values)
+        errors.append(error)
+
+    for (instance, port), group in groups.items():
+        port_path = "%s.%s" % (instance, port)
+        verified = []
+        rejected_reason = ""
+        for surface, index, value, row in group["constants"]:
+            candidates = evidence_by_key.get((port_path, value), [])
+            if not any(item.get("effective_candidate") for item in candidates):
+                rejected_indexes[surface].add(index)
+                rejected[(port_path, value)] = "unverified_provenance"
+                rejected_reason = "CONSTANT_PROVENANCE_UNVERIFIED"
+                add_error(
+                    "CONSTANT_PROVENANCE_UNVERIFIED", instance, port,
+                    "constant endpoint was suppressed because no unconditional provenance was found",
+                    [value])
+            else:
+                verified.append((surface, index, value, row))
+
+        semantic_values = set(port_trace_constant_semantics(value) for _, _, value, _ in verified)
+        conflict = len(semantic_values) > 1
+        mixed = bool(verified and group["signals"])
+        if conflict or mixed:
+            code = "CONSTANT_DRIVER_CONFLICT" if conflict else "CONSTANT_DRIVER_AMBIGUOUS"
+            message = (
+                "conflicting constant endpoints were suppressed"
+                if conflict else
+                "constant endpoints mixed with non-constant drivers and were suppressed"
+            )
+            values = [value for _, _, value, _ in verified] + group["signals"]
+            add_error(code, instance, port, message, values)
+            reason = "conflicting_constants" if conflict else "mixed_driver_kinds"
+            rejected_reason = code
+            for surface, index, value, row in verified:
+                rejected_indexes[surface].add(index)
+                rejected[(port_path, value)] = reason
+        if rejected_reason:
+            for surface, rows in surfaces.items():
+                remaining_driver = any(
+                    index not in rejected_indexes[surface]
+                    and row.get("role") == "driver"
+                    and str(row.get("inst_full_name", "")) == instance
+                    and str(row.get("port_name", "")) == port
+                    for index, row in enumerate(rows)
+                )
+                removed_rows = [
+                    row for removed_surface, index, value, row in group["constants"]
+                    if removed_surface == surface and index in rejected_indexes[surface]
+                ]
+                if not remaining_driver and removed_rows:
+                    marker = dict(removed_rows[0])
+                    marker["signal_full_name"] = "TRACE_LIMIT_REACHED:%s" % rejected_reason.lower()
+                    marker_rows[surface].append(marker)
+
+    filtered = {}
+    for surface, rows in surfaces.items():
+        filtered[surface] = [
+            row for index, row in enumerate(rows) if index not in rejected_indexes[surface]
+        ] + marker_rows[surface]
+    return filtered["full"], filtered["boundary"], sum(
+        len(indexes) for indexes in rejected_indexes.values()), sum(
+        len(rows) for rows in marker_rows.values())
+
+
+def postprocess_port_trace_data(data):
+    evidence = normalize_port_trace_evidence(data.get("evidence", []))
+    evidence_by_key = {}
+    for item in evidence:
+        key = (str(item.get("port_path", "")), str(item.get("value", "")))
+        evidence_by_key.setdefault(key, []).append(item)
+
+    errors = [dict(item) for item in data.get("errors", []) if isinstance(item, dict)]
+    rejected = {}
+    full_rows, boundary_rows, suppressed_count, guard_marker_count = guard_port_trace_surfaces(
+        data.get("full_rows", []), data.get("boundary_rows", []),
+        evidence_by_key, errors, rejected)
+
+    published_constants = set()
+    for row in full_rows + boundary_rows:
+        if row.get("role") != "driver":
+            continue
+        value = str(row.get("signal_full_name", ""))
+        if port_trace_is_constant(value):
+            published_constants.add((
+                "%s.%s" % (
+                    str(row.get("inst_full_name", "")),
+                    str(row.get("port_name", "")),
+                ),
+                value,
+            ))
+
+    for item in evidence:
+        key = (str(item.get("port_path", "")), str(item.get("value", "")))
+        rejection = rejected.get(key)
+        if item.get("effective_candidate") and key not in published_constants and not rejection:
+            rejection = "row_not_published"
+        effective = bool(item.get("effective_candidate")) and not rejection
+        item["effective"] = effective
+        item["constant"]["effective"] = effective
+        item["provenance"]["unconditional"] = effective
+        if rejection:
+            item["rejection_reason"] = rejection
+
+    data["full_rows"] = full_rows
+    data["boundary_rows"] = boundary_rows
+    data["evidence"] = evidence
+    data["errors"] = errors
+    trace_limit_marker_count = sum(
+        1 for row in full_rows + boundary_rows
+        if str(row.get("signal_full_name", "")).startswith("TRACE_LIMIT_REACHED:")
+    )
+    data["truncated"] = bool(
+        data.get("truncated", False) or guard_marker_count or trace_limit_marker_count)
+    requested_ports = data.get("requested_ports", [])
+    if not isinstance(requested_ports, list):
+        requested_ports = []
+    traced_pairs = set()
+    traced_ports = set()
+    for row in full_rows + boundary_rows:
+        instance = str(row.get("inst_full_name", ""))
+        port = str(row.get("port_name", ""))
+        if port:
+            traced_pairs.add((instance, port))
+            traced_ports.add(port)
+    data["requested_ports"] = requested_ports
+    data["traced_ports"] = sorted(traced_ports)
+    data["selection_mode"] = "explicit" if requested_ports else "all"
+    stats = data.get("stats") if isinstance(data.get("stats"), dict) else {}
+    stats.update({
+        "full_row_count": len(full_rows),
+        "boundary_row_count": len(boundary_rows),
+        "evidence_count": len(evidence),
+        "error_count": len(errors),
+        "suppressed_constant_count": suppressed_count,
+        "constant_guard_marker_count": guard_marker_count,
+        "trace_limit_marker_count": trace_limit_marker_count,
+        "requested_port_count": len(requested_ports),
+        "traced_port_count": len(traced_pairs),
+    })
+    data["stats"] = stats
+    data["summary"] = {
+        "module": data.get("module", ""),
+        "selection_mode": data["selection_mode"],
+        "requested_port_count": len(requested_ports),
+        "traced_port_count": len(traced_pairs),
+        "processed_instances": stats.get("processed_instances", 0),
+        "full_row_count": len(full_rows),
+        "boundary_row_count": len(boundary_rows),
+        "evidence_count": len(evidence),
+        "error_count": len(errors),
+        "truncated": data["truncated"],
+    }
+    return data
+
+
 def postprocess_npi_data(action, data):
     if action == "value.at":
         raw = data.get("raw", "")
@@ -1429,6 +1930,22 @@ def postprocess_npi_data(action, data):
             "mode": mode,
             "edge_count": len(edges),
             "status": data.get("status", "ok"),
+        }
+    elif action == "port.trace_batch":
+        data = postprocess_port_trace_data(data)
+    elif action == "module.inspect_batch":
+        inspections = data.get("inspections", [])
+        error_count = sum(1 for item in inspections if not item.get("ok"))
+        any_truncated = any(
+            bool((item.get("data") or {}).get("truncated", False))
+            for item in inspections if isinstance(item, dict)
+        )
+        data["truncated"] = any_truncated
+        data["summary"] = {
+            "module_count": len(inspections),
+            "success_count": len(inspections) - error_count,
+            "error_count": error_count,
+            "truncated": any_truncated,
         }
     elif action == "signal.scan":
         unknown = 0
@@ -2273,12 +2790,12 @@ def run_action(request, state):
         return active_driver_action(request, state)
     if action == "trace.active_driver_chain":
         return active_driver_chain_action(request, state)
-    if action in ("trace.driver", "trace.load", "trace.query", "signal.resolve",
+    if action in ("trace.driver", "trace.load", "trace.query", "port.trace_batch", "signal.resolve",
                   "signal.canonicalize", "signal.info", "signal.scan",
                   "value.at", "value.batch_at", "scope.list",
                   "npi.capabilities", "language.resolve", "language.iterate",
                   "language.relate", "language.value", "module.objects",
-                  "module.find_instances", "module.inspect",
+                  "module.find_instances", "module.inspect", "module.inspect_batch",
                   "netlist.resolve", "netlist.iterate",
                   "text.line", "text.words", "text.replace_line",
                   "dm.add_net", "dm.clone_module", "vcs.summary",

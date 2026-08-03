@@ -1,0 +1,87 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "port.trace_batch",
+  "summary": {
+    "module": "MSHR",
+    "selection_mode": "explicit",
+    "requested_port_count": 2,
+    "traced_port_count": 2,
+    "processed_instances": 4,
+    "full_row_count": 2,
+    "boundary_row_count": 1,
+    "evidence_count": 1,
+    "error_count": 0,
+    "truncated": false
+  },
+  "data": {
+    "module": "MSHR",
+    "requested_ports": ["io_id[0]", "io_id[7]"],
+    "traced_ports": ["io_id[0]", "io_id[7]"],
+    "selection_mode": "explicit",
+    "full_rows": [
+      {
+        "inst_full_name": "XSTop.SimTop.l_soc.u_mshr",
+        "port_name": "io_id[0]",
+        "port_dir": "input",
+        "role": "driver",
+        "signal_full_name": "Const:1'b1"
+      },
+      {
+        "inst_full_name": "XSTop.SimTop.l_soc.u_mshr",
+        "port_name": "io_id[7]",
+        "port_dir": "input",
+        "role": "driver",
+        "signal_full_name": "XSTop.SimTop.l_soc.io_id_7"
+      }
+    ],
+    "boundary_rows": [
+      {
+        "inst_full_name": "XSTop.SimTop.l_soc.u_mshr",
+        "port_name": "io_id[7]",
+        "port_dir": "input",
+        "role": "driver",
+        "signal_full_name": "XSTop.SimTop.l_soc.io_id_7"
+      }
+    ],
+    "evidence": [
+      {
+        "kind": "constant",
+        "value": "Const:1'b1",
+        "method": "source_port_connection",
+        "role": "driver",
+        "port_path": "XSTop.SimTop.l_soc.u_mshr.io_id[0]",
+        "const_full_path": "XSTop.SimTop.l_soc.u_mshr.io_id[0]<-Const:1'b1",
+        "effective": true,
+        "effective_candidate": true,
+        "constant": {"value": "Const:1'b1", "effective": true},
+        "provenance": {
+          "origin": "source_port_connection",
+          "unconditional": true,
+          "path": ["XSTop.SimTop.l_soc.u_mshr.io_id[0]", "Const:1'b1"],
+          "source": {"file": "rtl/MSHR.sv", "line": "", "raw_handle": "", "raw_handle_kind": ""}
+        },
+        "fields": {
+          "role": "driver",
+          "instance": "XSTop.SimTop.l_soc.u_mshr",
+          "port": "io_id[0]",
+          "port_path": "XSTop.SimTop.l_soc.u_mshr.io_id[0]"
+        }
+      }
+    ],
+    "errors": [],
+    "truncated": false,
+    "stats": {
+      "processed_instances": 4,
+      "skipped_instances": 0,
+      "full_row_count": 2,
+      "boundary_row_count": 1,
+      "evidence_count": 1,
+      "error_count": 0,
+      "suppressed_constant_count": 0,
+      "requested_port_count": 2,
+      "traced_port_count": 2
+    }
+  },
+  "warnings": []
+}

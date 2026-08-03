@@ -4,6 +4,8 @@
 #include "logging/action_log.h"
 #include "runtime/work_dir.h"
 
+#include <cstdlib>
+#include <limits>
 #include <string>
 
 namespace kdebug {
@@ -25,6 +27,15 @@ std::string request_session_id_for_log(const Json& request) {
     if (!sid.empty()) return sid;
     sid = get_str(target, "name");
     return sid.empty() ? "adhoc" : sid;
+}
+
+int engine_cleanup_grace_ms() {
+    const char* raw = std::getenv("KDEBUG_ENGINE_CLEANUP_GRACE_MS");
+    if (raw == nullptr || *raw == '\0') return 5000;
+    char* end = nullptr;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (end == raw || *end != '\0' || parsed < 0 || parsed > 60000) return 5000;
+    return static_cast<int>(parsed);
 }
 
 } // namespace
@@ -65,8 +76,17 @@ bool EngineAdapter::invoke(const Json& kdebug_request,
     process_req.argv = {"ai", "query", "-"};
     process_req.stdin_text = stdin_text;
     process_req.working_dir = workdir;
-    process_req.timeout_ms = kdebug_request.value("limits", Json::object())
-                                 .value("timeout_ms", 0);
+    const int action_timeout_ms = kdebug_request.value("limits", Json::object())
+                                      .value("timeout_ms", 0);
+    process_req.timeout_ms = action_timeout_ms;
+    if (action_timeout_ms > 0) {
+        const int grace_ms = engine_cleanup_grace_ms();
+        if (action_timeout_ms > std::numeric_limits<int>::max() - grace_ms) {
+            process_req.timeout_ms = std::numeric_limits<int>::max();
+        } else {
+            process_req.timeout_ms += grace_ms;
+        }
+    }
 
     kdebug_core::log_lifecycle_event(component, log_sid, "engine.spawning", true,
                                      {{"engine_path", path}, {"workdir", workdir},
@@ -79,7 +99,8 @@ bool EngineAdapter::invoke(const Json& kdebug_request,
         error = "internal engine timed out";
         if (!result.stderr_text.empty()) error += ": " + result.stderr_text;
         kdebug_core::log_lifecycle_event(component, log_sid, "engine.process_timeout", false,
-                                         {{"timeout_ms", process_req.timeout_ms},
+                                         {{"timeout_ms", action_timeout_ms},
+                                          {"cleanup_grace_ms", engine_cleanup_grace_ms()},
                                           {"message", error}, {"engine_path", path}});
         return false;
     }

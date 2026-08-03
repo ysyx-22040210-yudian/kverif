@@ -1,0 +1,29 @@
+{
+  "api_version": "kdebug.v1",
+  "ok": true,
+  "action": "module.inspect_batch",
+  "summary": {"module_count": 2, "success_count": 1, "error_count": 1, "truncated": false},
+  "data": {
+    "inspections": [
+      {
+        "module": "top.u_alu",
+        "ok": true,
+        "data": {
+          "module": "top.u_alu",
+          "sections": {"parameters": [], "ports": [], "io": []},
+          "counts": {"parameters": 0, "ports": 0, "io": 0},
+          "truncated": false
+        },
+        "error": null
+      },
+      {
+        "module": "top.u_lsu",
+        "ok": false,
+        "data": null,
+        "error": {"code": "MODULE_NOT_FOUND", "message": "module instance not found: top.u_lsu"}
+      }
+    ],
+    "truncated": false
+  },
+  "meta": {"truncated": false}
+}

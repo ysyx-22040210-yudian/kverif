@@ -1,3 +1,5 @@
+set ::kdebug_npi_script_dir [file dirname [file normalize [info script]]]
+
 proc json_escape {s} {
     set out ""
     set n [string length $s]
@@ -562,9 +564,19 @@ proc module_find_instances_action {definition max_rows} {
         summary [json_object [list definition $definition count $total returned_count $returned truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
 }
 
-proc module_inspect_action {module sections_text max_rows} {
-    set module_hdl [require_module_object $module]
-    if {$module_hdl eq ""} {return}
+proc module_inspect_result {module sections_text max_rows} {
+    if {$module eq ""} {
+        return [list 0 "" MISSING_FIELD "args.module is required" 0]
+    }
+    if {![command_available npi_handle_by_name]} {
+        return [list 0 "" NPI_COMMAND_UNAVAILABLE "NPI command is unavailable in this Verdi runtime: npi_handle_by_name" 0]
+    }
+    if {[catch {set module_hdl [resolve_language_handle $module ""]} resolve_error]} {
+        return [list 0 "" MODULE_QUERY_FAILED "module instance lookup failed: $resolve_error" 0]
+    }
+    if {$module_hdl eq ""} {
+        return [list 0 "" MODULE_NOT_FOUND "module instance not found: $module" 0]
+    }
     if {$sections_text eq ""} {
         set sections {instances parameters ports io nets variables generate_scopes}
     } else {
@@ -579,8 +591,7 @@ proc module_inspect_action {module sections_text max_rows} {
         set items [module_section_json $module $kind $max_rows total returned truncated error_message]
         if {$error_message ne ""} {
             catch {npi_release_handle -object $module_hdl}
-            fail_data "MODULE_QUERY_FAILED" $error_message
-            return
+            return [list 0 "" MODULE_QUERY_FAILED $error_message 0]
         }
         lappend section_pairs $kind $items
         lappend count_pairs $kind [json_value $total]
@@ -589,40 +600,287 @@ proc module_inspect_action {module sections_text max_rows} {
     }
     set module_object [language_object_json $module_hdl 0 0]
     catch {npi_release_handle -object $module_hdl}
-    ok_data [list \
+    set data [json_object_raw [list \
         module [json_string $module] \
         module_object $module_object \
         sections [json_object_raw $section_pairs] \
         counts [json_object_raw $count_pairs] \
         returned_counts [json_object_raw $returned_pairs] \
         truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
-        summary [json_object_raw [list module [json_string $module] section_count [json_value [llength $sections]] truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] counts [json_object_raw $count_pairs]]]]
+        summary [json_object_raw [list module [json_string $module] section_count [json_value [llength $sections]] truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] counts [json_object_raw $count_pairs]]]]]
+    return [list 1 $data "" "" $any_truncated]
 }
 
-proc trace_action {mode signal} {
-    if {$signal eq ""} {
-        fail_data "MISSING_FIELD" "args.signal is required"
+proc module_inspect_action {module sections_text max_rows} {
+    lassign [module_inspect_result $module $sections_text $max_rows] succeeded data code message truncated
+    if {!$succeeded} {
+        fail_data $code $message
         return
     }
+    write_response_raw [json_object_raw [list ok true data $data]]
+}
+
+proc module_inspect_batch_action {plan sections_text max_rows} {
+    if {[catch {set rows [read_plan_rows $plan 1]} plan_error]} {
+        fail_data "INVALID_PLAN" $plan_error
+        return
+    }
+    if {[llength $rows] == 0} {
+        fail_data "MISSING_FIELD" "args.modules must be a non-empty array"
+        return
+    }
+    set inspections {}
+    set success_count 0
+    set error_count 0
+    set any_truncated 0
+    foreach row $rows {
+        if {[catch {set module [decode_hex_utf8 [lindex $row 0]]} decode_error]} {
+            fail_data "INVALID_PLAN" $decode_error
+            return
+        }
+        lassign [module_inspect_result $module $sections_text $max_rows] succeeded data code message truncated
+        if {$succeeded} {
+            incr success_count
+            if {$truncated} {set any_truncated 1}
+            lappend inspections [json_object_raw [list \
+                module [json_string $module] ok true data $data error null]]
+        } else {
+            incr error_count
+            lappend inspections [json_object_raw [list \
+                module [json_string $module] ok false data null \
+                error [json_object [list code $code message $message]]]]
+        }
+    }
+    ok_data [list \
+        inspections [json_array_raw $inspections] \
+        truncated [json_value [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
+        summary [json_object [list module_count [llength $rows] success_count $success_count error_count $error_count truncated [expr {$any_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+}
+
+proc trace_result {mode signal max_rows} {
+    if {$signal eq ""} {
+        return [list 0 "" MISSING_FIELD "args.signal is required" 0 error]
+    }
+    if {$mode ne "driver" && $mode ne "load"} {
+        return [list 0 "" INVALID_ARGUMENT "trace mode must be driver or load" 0 error]
+    }
     set handles {}
-    if {$mode eq "load"} {
-        set count [::npi_L1::npi_trace_load $signal handles]
-    } else {
-        set count [::npi_L1::npi_trace_driver $signal handles]
+    if {[catch {
+        if {$mode eq "load"} {
+            set count [::npi_L1::npi_trace_load $signal handles]
+        } else {
+            set count [::npi_L1::npi_trace_driver $signal handles]
+        }
+    } trace_error]} {
+        foreach h $handles {catch {npi_release_handle -object $h}}
+        return [list 0 "" TRACE_QUERY_FAILED $trace_error 0 error]
     }
     set arr {}
+    set limit [positive_limit $max_rows 200]
+    set returned 0
+    set truncated 0
     foreach h $handles {
-        lappend arr [handle_json $h]
+        if {$returned < $limit} {
+            lappend arr [handle_json $h]
+            incr returned
+        } else {
+            set truncated 1
+        }
         catch {npi_release_handle -object $h}
     }
+    if {$count > $returned} {set truncated 1}
     set status [expr {$count > 0 ? "ok" : "not_found"}]
-    ok_data [list \
+    set data [json_object_raw [list \
         signal [json_string $signal] \
         mode [json_string $mode] \
         status [json_string $status] \
         count $count \
+        returned_count $returned \
+        truncated [json_value [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]] \
         handles [json_array_raw $arr] \
-        summary [json_object [list signal $signal mode $mode count $count status $status]]]
+        summary [json_object [list signal $signal mode $mode count $count returned_count $returned status $status truncated [expr {$truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]]
+    return [list 1 $data "" "" $truncated $status]
+}
+
+proc trace_action {mode signal max_rows} {
+    lassign [trace_result $mode $signal $max_rows] succeeded data code message truncated status
+    if {!$succeeded} {
+        fail_data $code $message
+        return
+    }
+    write_response_raw [json_object_raw [list ok true data $data]]
+}
+
+proc port_trace_plan_values {plan required label} {
+    set rows [read_plan_rows $plan 1]
+    set values {}
+    foreach row $rows {
+        lappend values [decode_hex_utf8 [lindex $row 0]]
+    }
+    if {$required && [llength $values] == 0} {
+        error "$label must be a non-empty array"
+    }
+    return $values
+}
+
+proc port_trace_dict_value {record key} {
+    if {[dict exists $record $key]} {return [dict get $record $key]}
+    return ""
+}
+
+proc port_trace_row_json {row} {
+    return [json_object [list \
+        inst_full_name [port_trace_dict_value $row inst_full_name] \
+        port_name [port_trace_dict_value $row port_name] \
+        port_dir [port_trace_dict_value $row port_dir] \
+        role [port_trace_dict_value $row role] \
+        signal_full_name [port_trace_dict_value $row signal_full_name]]]
+}
+
+proc port_trace_error_json {record} {
+    set fields {}
+    foreach key {scope code message module instance port signal value handle} {
+        if {[dict exists $record $key]} {
+            lappend fields $key [dict get $record $key]
+        }
+    }
+    return [json_object $fields]
+}
+
+proc port_trace_effective_method {method role} {
+    if {$role ne "driver"} {return 0}
+    expr {$method in {
+        source_port_connection
+        npi_connection
+        connected_signal_const
+        parent_port_connection_const
+        parent_port_chain
+        parent_port_chain_terminal
+        source_const_assign_map
+        source_assign_const_chain
+        source_assign_direct
+        source_assign_driver
+        module_port_high_conn
+    }}
+}
+
+proc port_trace_evidence_json {record} {
+    set method [port_trace_dict_value $record method]
+    set value [port_trace_dict_value $record value]
+    set const_full_path [port_trace_dict_value $record const_full_path]
+    set fields [port_trace_dict_value $record fields]
+    set role [port_trace_dict_value $fields role]
+    set candidate_effective [port_trace_effective_method $method $role]
+
+    set path_items {}
+    foreach node [split [string map [list "<-" "\n"] $const_full_path] "\n"] {
+        set node [string trim $node]
+        if {$node ne ""} {lappend path_items $node}
+    }
+    set source [json_object [list \
+        file [port_trace_dict_value $fields source_file] \
+        line [port_trace_dict_value $fields source_line] \
+        raw_handle [port_trace_dict_value $fields source_handle_path] \
+        raw_handle_kind [port_trace_dict_value $fields source_handle_kind]]]
+    set provenance [json_object_raw [list \
+        origin [json_string $method] \
+        unconditional [expr {$candidate_effective ? "true" : "false"}] \
+        path [json_array $path_items] \
+        source $source]]
+    set constant [json_object_raw [list \
+        value [json_string $value] \
+        effective [expr {$candidate_effective ? "true" : "false"}]]]
+    return [json_object_raw [list \
+        kind [json_string constant] \
+        value [json_string $value] \
+        method [json_string $method] \
+        role [json_string $role] \
+        port_path [json_string [port_trace_dict_value $fields port_path]] \
+        const_full_path [json_string $const_full_path] \
+        effective_candidate [expr {$candidate_effective ? "true" : "false"}] \
+        constant $constant \
+        provenance $provenance \
+        fields [json_object $fields]]]
+}
+
+proc port_trace_batch_action {
+    module port_plan stop_plan source source_fallback include_full include_boundary
+    max_parent_depth max_assign_depth max_expr_depth max_nodes max_edges
+    max_api_results max_rows debug_enabled
+} {
+    if {$module eq ""} {
+        fail_data "MISSING_FIELD" "args.module is required"
+        return
+    }
+    if {$source ne "" && ![file isfile $source]} {
+        fail_data "SOURCE_FILE_NOT_FOUND" "args.source does not exist: $source"
+        return
+    }
+    if {[catch {
+        set ports [port_trace_plan_values $port_plan 0 "args.ports"]
+        set stop_instances [port_trace_plan_values $stop_plan 0 "args.stop_instances"]
+    } plan_error]} {
+        fail_data "INVALID_PLAN" $plan_error
+        return
+    }
+
+    lassign [kdebug_port_trace_run \
+        $module $ports $stop_instances $source \
+        [bool_value $source_fallback] [bool_value $include_full] [bool_value $include_boundary] \
+        $max_parent_depth $max_assign_depth $max_expr_depth $max_nodes $max_edges \
+        $max_api_results $max_rows [bool_value $debug_enabled]] \
+        succeeded code message processed_instances skipped_instances
+    if {!$succeeded} {
+        fail_data $code $message
+        return
+    }
+
+    set full_rows {}
+    foreach row $::kdebug_port_trace_full_rows {
+        lappend full_rows [port_trace_row_json $row]
+    }
+    set boundary_rows {}
+    foreach row $::kdebug_port_trace_boundary_rows {
+        lappend boundary_rows [port_trace_row_json $row]
+    }
+    set evidence {}
+    foreach record $::kdebug_port_trace_evidence {
+        lappend evidence [port_trace_evidence_json $record]
+    }
+    set errors {}
+    foreach record $::kdebug_port_trace_errors {
+        lappend errors [port_trace_error_json $record]
+    }
+    set truncated [expr {$::kdebug_port_trace_truncated ? "true" : "false"}]
+    set port_trace_response_pairs [list \
+        module [json_string $module] \
+        requested_ports [json_array $ports] \
+        full_rows [json_array_raw $full_rows] \
+        boundary_rows [json_array_raw $boundary_rows] \
+        evidence [json_array_raw $evidence] \
+        errors [json_array_raw $errors] \
+        truncated $truncated \
+        stats [json_object [list \
+            processed_instances $processed_instances \
+            skipped_instances $skipped_instances \
+            full_row_count [llength $full_rows] \
+            boundary_row_count [llength $boundary_rows] \
+            evidence_count [llength $evidence] \
+            error_count [llength $errors]]] \
+        summary [json_object [list \
+            module $module \
+            port_count [llength $ports] \
+            processed_instances $processed_instances \
+            full_row_count [llength $full_rows] \
+            boundary_row_count [llength $boundary_rows] \
+            evidence_count [llength $evidence] \
+            error_count [llength $errors] \
+            truncated [expr {$::kdebug_port_trace_truncated ? "__JSON_TRUE__" : "__JSON_FALSE__"}]]]]
+    if {[catch {llength $port_trace_response_pairs} response_list_error]} {
+        fail_data "TCL_RESPONSE_ENCODING_FAILED" $response_list_error
+        return
+    }
+    ok_data $port_trace_response_pairs
 }
 
 proc resolve_action {signal} {
@@ -1925,12 +2183,32 @@ proc npi_capabilities_action {} {
 proc main {} {
     source_l1
     set action [env_or_empty KDEBUG_TCL_ACTION]
+    if {$action eq "port.trace_batch"} {
+        uplevel #0 [list source [file join $::kdebug_npi_script_dir kdebug_port_trace.tcl]]
+    }
     if {$action eq "trace.driver"} {
-        trace_action driver [env_or_empty KDEBUG_TCL_SIGNAL]
+        trace_action driver [env_or_empty KDEBUG_TCL_SIGNAL] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "trace.load" || $action eq "trace.query"} {
         set mode [env_or_empty KDEBUG_TCL_TRACE_MODE]
         if {$mode eq ""} {set mode load}
-        trace_action $mode [env_or_empty KDEBUG_TCL_SIGNAL]
+        trace_action $mode [env_or_empty KDEBUG_TCL_SIGNAL] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "port.trace_batch"} {
+        port_trace_batch_action \
+            [env_or_empty KDEBUG_TCL_MODULE] \
+            [env_or_empty KDEBUG_TCL_PORT_PLAN] \
+            [env_or_empty KDEBUG_TCL_STOP_INSTANCE_PLAN] \
+            [env_or_empty KDEBUG_TCL_SOURCE] \
+            [env_or_empty KDEBUG_TCL_SOURCE_FALLBACK] \
+            [env_or_empty KDEBUG_TCL_INCLUDE_FULL] \
+            [env_or_empty KDEBUG_TCL_INCLUDE_BOUNDARY] \
+            [env_or_empty KDEBUG_TCL_MAX_PARENT_DEPTH] \
+            [env_or_empty KDEBUG_TCL_MAX_ASSIGN_DEPTH] \
+            [env_or_empty KDEBUG_TCL_MAX_EXPR_DEPTH] \
+            [env_or_empty KDEBUG_TCL_MAX_NODES] \
+            [env_or_empty KDEBUG_TCL_MAX_EDGES] \
+            [env_or_empty KDEBUG_TCL_MAX_API_RESULTS] \
+            [env_or_empty KDEBUG_TCL_MAX_ROWS] \
+            [env_or_empty KDEBUG_TCL_TRACE_DEBUG]
     } elseif {$action eq "signal.resolve"} {
         resolve_action [env_or_empty KDEBUG_TCL_SIGNAL]
     } elseif {$action eq "signal.canonicalize"} {
@@ -1963,6 +2241,8 @@ proc main {} {
         module_find_instances_action [env_or_empty KDEBUG_TCL_DEFINITION] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "module.inspect"} {
         module_inspect_action [env_or_empty KDEBUG_TCL_MODULE] [env_or_empty KDEBUG_TCL_SECTIONS] [env_or_empty KDEBUG_TCL_MAX_ROWS]
+    } elseif {$action eq "module.inspect_batch"} {
+        module_inspect_batch_action [env_or_empty KDEBUG_TCL_BATCH_PLAN] [env_or_empty KDEBUG_TCL_SECTIONS] [env_or_empty KDEBUG_TCL_MAX_ROWS]
     } elseif {$action eq "netlist.resolve"} {
         netlist_resolve_action [env_or_empty KDEBUG_TCL_NAME] [env_or_empty KDEBUG_TCL_OBJECT_TYPE]
     } elseif {$action eq "netlist.iterate"} {

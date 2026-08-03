@@ -68,6 +68,8 @@ example 和 contract test 迁移使用。状态定义：
 | `module.objects` | design | experimental | design | Tcl NPI Module Library 15-kind object inventory | VM stress PASS 150/150 (15 kinds) 2026-07-29 |
 | `module.find_instances` | design | experimental | design | Tcl NPI module-definition to instance lookup | VM stress PASS 10/10 2026-07-29 |
 | `module.inspect` | design | experimental | design | Tcl NPI aggregate instance/parameter/port/IO/connectivity inspection | VM stress PASS 10/10 2026-07-29 |
+| `module.inspect_batch` | design | experimental | design | single-Verdi Tcl NPI aggregate inspection batch | focused contract; XiangShan VM PASS 2026-08-04 |
+| `port.trace_batch` | design | experimental | design | legacy full/boundary port semantics through one Verdi Tcl process | focused contract; XiangShan VM stress PASS 2026-08-04 |
 | `netlist.resolve` | design | experimental | design | Tcl NPI Netlist Model lookup | VM stress PASS 10/10 2026-07-29 |
 | `netlist.iterate` | design | experimental | design | Tcl NPI Netlist Model iterator | VM stress PASS 10/10 2026-07-29 |
 | `text.line` | design | experimental | design | Tcl NPI Text Model line lookup | VM stress PASS 10/10 2026-07-29 |

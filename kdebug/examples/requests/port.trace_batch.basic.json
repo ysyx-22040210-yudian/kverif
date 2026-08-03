@@ -1,0 +1,27 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "port.trace_batch",
+  "target": {
+    "daidir": "/root/XiangShan-build/build/simv.daidir"
+  },
+  "args": {
+    "module": "MSHR",
+    "ports": ["io_id[0]", "io_id[7]"],
+    "stop_instances": ["XSTop.SimTop.l_soc.u_key0"],
+    "options": {
+      "source_fallback": true,
+      "include_full": true,
+      "include_boundary": true
+    }
+  },
+  "limits": {
+    "timeout_ms": 600000,
+    "max_parent_depth": 16,
+    "max_assign_depth": 2,
+    "max_expr_depth": 1,
+    "max_nodes": 20000,
+    "max_edges": 100000,
+    "max_api_results": 20000,
+    "max_rows": 20000
+  }
+}

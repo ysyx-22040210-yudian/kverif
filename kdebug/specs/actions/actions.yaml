@@ -1925,6 +1925,38 @@
       "required_args": ["module"]
     },
     {
+      "name": "module.inspect_batch",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/module.inspect_batch.request.schema.json",
+        "response": "schemas/v1/actions/module.inspect_batch.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/module.inspect_batch.basic.json"],
+        "response": ["examples/responses/module.inspect_batch.basic.json"]
+      },
+      "required_args": ["modules"]
+    },
+    {
+      "name": "port.trace_batch",
+      "category": "design",
+      "status": "experimental",
+      "requires": "design",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/port.trace_batch.request.schema.json",
+        "response": "schemas/v1/actions/port.trace_batch.response.schema.json"
+      },
+      "examples": {
+        "request": ["examples/requests/port.trace_batch.basic.json"],
+        "response": ["examples/responses/port.trace_batch.basic.json"]
+      },
+      "required_args": ["module"]
+    },
+    {
       "name": "netlist.resolve",
       "category": "design",
       "status": "experimental",

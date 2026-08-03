@@ -1,0 +1,10 @@
+{
+  "api_version": "kdebug.v1",
+  "action": "module.inspect_batch",
+  "target": {"daidir": "/data/build/simv.daidir"},
+  "args": {
+    "modules": ["top.u_alu", "top.u_lsu"],
+    "sections": ["parameters", "ports", "io"]
+  },
+  "limits": {"max_rows": 100, "timeout_ms": 120000}
+}
