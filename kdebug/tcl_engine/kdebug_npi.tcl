@@ -123,6 +123,24 @@ proc source_l1 {} {
     error "cannot locate npi_L1.tcl; set VERDI_HOME or NPIL1_PATH"
 }
 
+proc import_elab_if_requested {} {
+    set elab [env_or_empty KDEBUG_TCL_ELAB]
+    if {$elab eq ""} {return 1}
+    if {![file exists $elab]} {
+        fail_data "KDB_NOT_FOUND" "kdb.elab++ path does not exist: $elab"
+        return 0
+    }
+    if {![file isdirectory $elab]} {
+        fail_data "INVALID_KDB_PATH" "kdb.elab++ must be a directory: $elab"
+        return 0
+    }
+    if {[catch {debImport -elab $elab} err]} {
+        fail_data "ELAB_IMPORT_FAILED" "debImport -elab failed for $elab: $err"
+        return 0
+    }
+    return 1
+}
+
 proc safe_get_str {hdl prop} {
     if {$hdl eq ""} {return ""}
     if {[catch {npi_get_str -property $prop -object $hdl} v]} {return ""}
@@ -2182,6 +2200,7 @@ proc npi_capabilities_action {} {
 
 proc main {} {
     source_l1
+    if {![import_elab_if_requested]} {return}
     set action [env_or_empty KDEBUG_TCL_ACTION]
     if {$action eq "port.trace_batch"} {
         uplevel #0 [list source [file join $::kdebug_npi_script_dir kdebug_port_trace.tcl]]

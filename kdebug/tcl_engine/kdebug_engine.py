@@ -9,6 +9,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -439,7 +440,7 @@ def classify_verdi_no_response(stdout, stderr, exit_code):
     if "not generated with the -kdb option" in text:
         return {
             "code": "KDB_REQUIRED",
-            "message": "Verdi design queries require a simv.daidir generated with VCS -kdb",
+            "message": "Verdi design queries require simv.daidir or kdb.elab++ generated with VCS -kdb",
             "exit_code": exit_code,
             "stdout": (stdout or "")[-4000:],
             "stderr": (stderr or "")[-4000:],
@@ -498,6 +499,61 @@ STANDALONE_TCL_ACTIONS = {
 }
 
 
+class DesignDatabaseError(ValueError):
+    def __init__(self, code, message):
+        ValueError.__init__(self, message)
+        self.code = code
+
+
+def resolve_design_database(target):
+    value = target.get("daidir") or target.get("dbdir")
+    path = normalized_path(value)
+    if not path:
+        return {"kind": "", "path": ""}
+
+    normalized = os.path.normpath(path)
+    resolved = os.path.realpath(normalized) if os.path.lexists(normalized) else normalized
+    is_elab = (os.path.basename(normalized).endswith(".elab++") or
+               os.path.basename(resolved).endswith(".elab++"))
+    if not is_elab:
+        return {"kind": "daidir", "path": normalized}
+
+    try:
+        path_stat = os.stat(normalized)
+    except OSError as exc:
+        if exc.errno in (errno.ENOENT, errno.ENOTDIR):
+            raise DesignDatabaseError(
+                "KDB_NOT_FOUND", "kdb.elab++ path does not exist: %s" % normalized)
+        raise DesignDatabaseError(
+            "DESIGN_DB_ACCESS_FAILED", "cannot access kdb.elab++ path %s: %s" %
+            (normalized, exc))
+    if not stat.S_ISDIR(path_stat.st_mode):
+        raise DesignDatabaseError(
+            "INVALID_KDB_PATH", "kdb.elab++ must be a directory: %s" % normalized)
+    try:
+        with os.scandir(normalized) as entries:
+            next(entries)
+    except StopIteration:
+        raise DesignDatabaseError(
+            "INVALID_KDB_PATH", "kdb.elab++ directory is empty: %s" % normalized)
+    except OSError as exc:
+        raise DesignDatabaseError(
+            "DESIGN_DB_ACCESS_FAILED", "cannot read kdb.elab++ directory %s: %s" %
+            (normalized, exc))
+    # Verdi 2018 can silently import no design objects when debImport receives a
+    # symlink whose basename does not retain the .elab++ suffix.  Canonicalize
+    # only after validating the user-facing path so native import sees the real
+    # database directory and vcs.summary derives the real .daidir parent.
+    return {"kind": "elab", "path": resolved}
+
+
+def vcs_database_path(design_database):
+    path = design_database.get("path", "")
+    if design_database.get("kind") == "elab":
+        return os.path.dirname(path)
+    return path
+
+
 def design_args_for_target(target, action=""):
     args = []
     if action in STANDALONE_TCL_ACTIONS:
@@ -527,9 +583,10 @@ def design_args_for_target(target, action=""):
         if top:
             args.extend(["-top", str(top)])
         return args
-    daidir = target.get("daidir") or target.get("dbdir")
+    design_database = resolve_design_database(target)
+    daidir = design_database.get("path")
     fsdb = target.get("fsdb")
-    if daidir:
+    if daidir and design_database.get("kind") != "elab":
         args.extend(["-dbdir", daidir])
     if fsdb and daidir:
         args.extend(["-ssf", fsdb])
@@ -926,6 +983,18 @@ def run_tcl_npi(request, state):
         target.update(request.get("target"))
     args = request.get("args") if isinstance(request.get("args"), dict) else {}
 
+    database_override = normalized_path(args.get("database"))
+    design_database = {"kind": "", "path": ""}
+    resolve_target_database = (
+        (action == "vcs.summary" and not database_override) or
+        (action not in STANDALONE_TCL_ACTIONS and not target.get("filelist"))
+    )
+    if resolve_target_database:
+        try:
+            design_database = resolve_design_database(target)
+        except DesignDatabaseError as exc:
+            return False, {"code": exc.code, "message": str(exc)}
+
     verdi = find_verdi()
     if not verdi:
         return False, {"code": "VERDI_NOT_FOUND", "message": "verdi is not in PATH; set VERDI_HOME"}
@@ -937,6 +1006,9 @@ def run_tcl_npi(request, state):
         json.dump(request, fp)
 
     env = dict(os.environ)
+    # This is an internal per-request selector.  Never inherit a stale value
+    # into a daidir, filelist, or standalone action.
+    env.pop("KDEBUG_TCL_ELAB", None)
     env["KDEBUG_TCL_REQUEST_JSON"] = req_path
     env["KDEBUG_TCL_RESPONSE_JSON"] = rsp_path
     env["KDEBUG_TCL_ACTION"] = action
@@ -982,7 +1054,12 @@ def run_tcl_npi(request, state):
     env["KDEBUG_TCL_OUTPUT"] = normalized_path(args.get("output", ""))
     env["KDEBUG_TCL_OUTPUT_DIR"] = normalized_path(args.get("output_dir", ""))
     env["KDEBUG_TCL_OVERWRITE"] = "1" if bool_arg(args.get("overwrite", False)) else "0"
-    env["KDEBUG_TCL_DATABASE"] = normalized_path(args.get("database") or target.get("daidir") or target.get("dbdir"))
+    database = database_override
+    if not database:
+        database = vcs_database_path(design_database)
+    env["KDEBUG_TCL_DATABASE"] = database
+    if design_database.get("kind") == "elab" and action not in STANDALONE_TCL_ACTIONS:
+        env["KDEBUG_TCL_ELAB"] = design_database.get("path")
     env["KDEBUG_TCL_CRDB"] = normalized_path(args.get("crdb", ""))
     env["KDEBUG_TCL_LEVEL"] = str(args.get("level", "RTL"))
     env["KDEBUG_TCL_MODULE"] = str(args.get("module", ""))
@@ -1007,6 +1084,9 @@ def run_tcl_npi(request, state):
             env["KDEBUG_TCL_RELATION_PLAN"] = relation_plan
         elif action == "fsdb.writer.create_scope":
             env["KDEBUG_TCL_OPERATION_PLAN"] = prepare_scope_plan(args, tmpdir)
+    except DesignDatabaseError as exc:
+        cleanup_tcl_tmp(tmpdir)
+        return False, {"code": exc.code, "message": str(exc)}
     except ValueError as exc:
         cleanup_tcl_tmp(tmpdir)
         return False, {"code": "INVALID_ARGUMENT", "message": str(exc)}
@@ -2960,6 +3040,12 @@ def open_session(request):
         "daidir": target.get("daidir", target.get("dbdir", "")),
         "fsdb": target.get("fsdb", ""),
     }
+    if opts["daidir"]:
+        try:
+            design_database = resolve_design_database({"daidir": opts["daidir"]})
+            opts["daidir"] = design_database.get("path", opts["daidir"])
+        except DesignDatabaseError as exc:
+            return make_error_response(request, "session.open", exc.code, str(exc))
     engine_exe = os.environ.get("KDEBUG_ENGINE_EXE") or os.path.abspath(sys.argv[0])
     cmd = [engine_exe, "--server", name]
     if opts["transport"]:

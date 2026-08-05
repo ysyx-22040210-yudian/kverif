@@ -846,7 +846,9 @@ KDebug 依据 NPI O-2018.09-SP2 功能矩阵增加了一组独立 Tcl action。�
 
 ```bash
 KDEBUG=/home/host/kverif/tools/kdebug
-DAIDIR=/data/build/simv.daidir
+# Both simv.daidir and simv.daidir/kdb.elab++ are accepted. The elab++ form is
+# imported natively with debImport -elab.
+DAIDIR=/data/build/simv.daidir/kdb.elab++
 
 "$KDEBUG" --json action module.find_instances --daidir "$DAIDIR" \
   --arg definition=alu --limit max_rows=200

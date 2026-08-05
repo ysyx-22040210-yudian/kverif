@@ -43,7 +43,9 @@ is a strict, independent array-size budget for `full_rows` and `boundary_rows`;
 when more rows exist, the final budget slot is replaced by
 `TRACE_LIMIT_REACHED:row_limit` on each affected surface. Constant evidence is
 marked effective only while at least one returned surface still publishes its
-constant row. `target.daidir` must name a VCS database generated with `-kdb`.
+constant row. `target.daidir` accepts either the generated `simv.daidir` directory
+or its `kdb.elab++` directory. The latter is opened natively with
+`debImport -elab`; it is not rewritten to the parent daidir.
 
 The arrays are transferred to Tcl through hex-encoded UTF-8 plan files rather
 than interpolated Tcl. `module.inspect_batch` preserves request order. The

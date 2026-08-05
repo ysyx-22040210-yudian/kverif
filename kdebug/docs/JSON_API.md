@@ -10,7 +10,7 @@ kdebug 是原 ktrace 与 kwave 的统一 JSON request 入口。agent 和自动�
   "request_id": "optional-id",
   "action": "trace.driver",
   "target": {
-    "daidir": "path/to/simv.daidir",
+    "daidir": "path/to/simv.daidir/kdb.elab++",
     "fsdb": "path/to/waves.fsdb"
   },
   "args": {},
@@ -21,6 +21,11 @@ kdebug 是原 ktrace 与 kwave 的统一 JSON request 入口。agent 和自动�
   }
 }
 ```
+
+`target.daidir` keeps its compatibility name but accepts either a
+`simv.daidir` directory or a `kdb.elab++` directory. An elab++ target is opened
+directly with `debImport -elab` for design queries. `vcs.summary` is the
+exception: the VCS Model opens the enclosing `simv.daidir`.
 
 ## Action-specific Schema
 

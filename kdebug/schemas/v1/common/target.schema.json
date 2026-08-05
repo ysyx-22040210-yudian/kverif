@@ -5,7 +5,9 @@
   "type": "object",
   "properties": {
     "daidir": {
-      "type": "string"
+      "type": "string",
+      "description": "Design database path: a VCS simv.daidir directory or a kdb.elab++ directory imported with debImport -elab for design queries; vcs.summary uses the enclosing simv.daidir",
+      "examples": ["simv.daidir", "simv.daidir/kdb.elab++"]
     },
     "fsdb": {
       "type": "string"

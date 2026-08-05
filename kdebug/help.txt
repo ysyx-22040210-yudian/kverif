@@ -28,13 +28,13 @@ Usage
   kdebug value-batch --fsdb <waves.fsdb>|--session <id> --signal <sig> [--signal <sig> ...] --time <time>
       Query several signals at the same time.
 
-  kdebug trace-driver --daidir <simv.daidir>|--session <id> --signal <sig> [--include-source]
-      Query the static RTL driver using the Verdi/VCS elaboration database.
+  kdebug trace-driver --daidir <simv.daidir|kdb.elab++>|--session <id> --signal <sig> [--include-source]
+      Query the static RTL driver using a daidir or native elab++ database.
 
-  kdebug active-driver --daidir <simv.daidir> --fsdb <waves.fsdb> --signal <sig> --time <time>
+  kdebug active-driver --daidir <simv.daidir|kdb.elab++> --fsdb <waves.fsdb> --signal <sig> --time <time>
       Join waveform time with design causality and locate the active driver.
 
-  kdebug session-open --name <id> [--daidir simv.daidir] [--fsdb waves.fsdb]
+  kdebug session-open --name <id> [--daidir simv.daidir|kdb.elab++] [--fsdb waves.fsdb]
       Open a reusable debug session. Use session-list/session-close to inspect or close it.
 
   kdebug action <action> [--session id] [--daidir path] [--fsdb path] [--arg key=value]

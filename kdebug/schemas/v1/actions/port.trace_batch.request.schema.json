@@ -12,7 +12,11 @@
       "type": "object",
       "required": ["daidir"],
       "properties": {
-        "daidir": {"type": "string", "minLength": 1}
+        "daidir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "VCS simv.daidir or kdb.elab++ directory"
+        }
       },
       "additionalProperties": true
     },

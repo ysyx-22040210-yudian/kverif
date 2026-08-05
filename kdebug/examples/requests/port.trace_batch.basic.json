@@ -2,7 +2,7 @@
   "api_version": "kdebug.v1",
   "action": "port.trace_batch",
   "target": {
-    "daidir": "/root/XiangShan-build/build/simv.daidir"
+    "daidir": "/root/XiangShan-build/build/simv.daidir/kdb.elab++"
   },
   "args": {
     "module": "MSHR",

@@ -29,7 +29,8 @@
       "type": "object",
       "properties": {
         "daidir": {
-          "type": "string"
+          "type": "string",
+          "description": "VCS simv.daidir or kdb.elab++ directory"
         },
         "fsdb": {
           "type": "string"

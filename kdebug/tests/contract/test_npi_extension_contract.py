@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import importlib.util
 import json
 import os
@@ -68,6 +69,13 @@ def _load_engine(kdebug_root: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _make_elab_dir(root: Path) -> Path:
+    elab = root / "simv.daidir" / "kdb.elab++"
+    elab.mkdir(parents=True)
+    (elab / "design.db").write_text("fixture", encoding="utf-8")
+    return elab
 
 
 @pytest.mark.contract
@@ -872,6 +880,337 @@ def test_source_filelist_target_builds_controlled_verdi_argv(
     assert engine.design_workdir_for_target(
         {"filelist": str(filelist)}, "power.resolve", "/tmp/fallback"
     ) == str(tmp_path)
+
+
+@pytest.mark.contract
+def test_vcs_summary_preserves_database_precedence_with_filelist_and_override(
+    kdebug_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    daidir = tmp_path / "simv.daidir"
+    daidir.mkdir()
+    filelist = tmp_path / "run.f"
+    filelist.write_text("design.sv\n", encoding="utf-8")
+    override = tmp_path / "override.daidir"
+    override.mkdir()
+    captured = []
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            self.env = kwargs["env"]
+            captured.append({"command": command, "env": self.env})
+
+        def communicate(self, timeout=None):
+            Path(self.env["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps({"ok": True, "data": {"summary": {}}}), encoding="utf-8"
+            )
+            return "", ""
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+
+    ok, _ = engine.run_tcl_npi(
+        {
+            "action": "vcs.summary",
+            "target": {"daidir": str(daidir), "filelist": str(filelist)},
+            "args": {},
+        },
+        {"target": {}},
+    )
+    assert ok is True
+    assert captured[-1]["env"]["KDEBUG_TCL_DATABASE"] == str(daidir)
+
+    ok, _ = engine.run_tcl_npi(
+        {
+            "action": "vcs.summary",
+            "target": {"daidir": str(tmp_path / "missing.elab++")},
+            "args": {"database": str(override)},
+        },
+        {"target": {}},
+    )
+    assert ok is True
+    assert captured[-1]["env"]["KDEBUG_TCL_DATABASE"] == str(override)
+
+    elab = _make_elab_dir(tmp_path / "elab_target")
+    ok, _ = engine.run_tcl_npi(
+        {
+            "action": "vcs.summary",
+            "target": {"daidir": str(elab)},
+            "args": {},
+        },
+        {"target": {}},
+    )
+    assert ok is True
+    assert "-dbdir" not in captured[-1]["command"]
+    assert "-ssf" not in captured[-1]["command"]
+    assert "KDEBUG_TCL_ELAB" not in captured[-1]["env"]
+    assert captured[-1]["env"]["KDEBUG_TCL_DATABASE"] == str(elab.parent)
+
+
+@pytest.mark.contract
+def test_elab_target_uses_native_import_instead_of_dbdir(
+    kdebug_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    elab = _make_elab_dir(tmp_path)
+    fsdb = tmp_path / "waves.fsdb"
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["env"] = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            response = {"ok": True, "data": {"instances": [], "summary": {"count": 0}}}
+            Path(captured["env"]["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps(response), encoding="utf-8"
+            )
+            return "", ""
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    request = {
+        "action": "module.find_instances",
+        "target": {"daidir": str(elab), "fsdb": str(fsdb)},
+        "args": {"definition": "Target"},
+    }
+    ok, _ = engine.run_tcl_npi(request, {"target": {}})
+
+    assert ok is True
+    assert "-dbdir" not in captured["command"]
+    assert captured["command"][-2:] == ["-ssf", str(fsdb)]
+    assert captured["env"]["KDEBUG_TCL_ELAB"] == str(elab)
+    assert captured["env"]["KDEBUG_TCL_DATABASE"] == str(elab.parent)
+    assert engine.design_args_for_target(
+        {"daidir": str(elab.parent)}, "module.find_instances"
+    ) == ["-dbdir", str(elab.parent)]
+
+
+@pytest.mark.contract
+def test_elab_symlink_uses_resolved_native_import_path(
+    kdebug_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    elab = _make_elab_dir(tmp_path / "database")
+    alias = tmp_path / "native_elab_alias"
+    try:
+        alias.symlink_to(elab, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip("directory symlinks are unavailable: %s" % exc)
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["env"] = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            response = {"ok": True, "data": {"instances": [], "summary": {"count": 0}}}
+            Path(captured["env"]["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps(response), encoding="utf-8"
+            )
+            return "", ""
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, _ = engine.run_tcl_npi(
+        {
+            "action": "module.find_instances",
+            "target": {"daidir": str(alias)},
+            "args": {"definition": "Target"},
+        },
+        {"target": {}},
+    )
+
+    resolved = str(elab.resolve())
+    assert ok is True
+    assert "-dbdir" not in captured["command"]
+    assert captured["env"]["KDEBUG_TCL_ELAB"] == resolved
+    assert captured["env"]["KDEBUG_TCL_DATABASE"] == str(elab.parent.resolve())
+    assert engine.resolve_design_database({"daidir": str(alias)}) == {
+        "kind": "elab",
+        "path": resolved,
+    }
+
+
+@pytest.mark.contract
+def test_daidir_target_clears_inherited_elab_selector(
+    kdebug_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    elab = _make_elab_dir(tmp_path)
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["env"] = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            response = {"ok": True, "data": {"instances": [], "summary": {"count": 0}}}
+            Path(captured["env"]["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps(response), encoding="utf-8"
+            )
+            return "", ""
+
+        def kill(self):
+            return None
+
+    monkeypatch.setenv("KDEBUG_TCL_ELAB", str(elab))
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, _ = engine.run_tcl_npi(
+        {
+            "action": "module.find_instances",
+            "target": {"daidir": str(elab.parent)},
+            "args": {"definition": "Target"},
+        },
+        {"target": {}},
+    )
+
+    assert ok is True
+    assert captured["command"][-2:] == ["-dbdir", str(elab.parent)]
+    assert "KDEBUG_TCL_ELAB" not in captured["env"]
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    ("fixture_kind", "error_code", "message"),
+    [
+        ("missing", "KDB_NOT_FOUND", "does not exist"),
+        ("file", "INVALID_KDB_PATH", "must be a directory"),
+        ("empty", "INVALID_KDB_PATH", "directory is empty"),
+    ],
+)
+def test_invalid_elab_target_fails_before_verdi_spawn(
+    fixture_kind: str,
+    error_code: str,
+    message: str,
+    kdebug_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _load_engine(kdebug_root)
+    elab = tmp_path / "kdb.elab++"
+    if fixture_kind == "file":
+        elab.write_text("not a directory", encoding="utf-8")
+    elif fixture_kind == "empty":
+        elab.mkdir()
+
+    def unexpected_verdi_lookup():
+        pytest.fail("Verdi lookup must not run for an invalid elab target")
+
+    monkeypatch.setattr(engine, "find_verdi", unexpected_verdi_lookup)
+    ok, error = engine.run_tcl_npi(
+        {
+            "action": "module.find_instances",
+            "target": {"daidir": str(elab)},
+            "args": {"definition": "Target"},
+        },
+        {"target": {}},
+    )
+    assert ok is False
+    assert error["code"] == error_code
+    assert message in error["message"]
+
+
+@pytest.mark.contract
+def test_inaccessible_elab_target_has_access_error(
+    kdebug_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    elab = _make_elab_dir(tmp_path)
+    original_stat = engine.os.stat
+
+    def deny_elab(path, *args, **kwargs):
+        if os.fspath(path) == str(elab):
+            raise OSError(errno.EACCES, "permission denied", str(elab))
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(engine.os, "stat", deny_elab)
+    with pytest.raises(engine.DesignDatabaseError) as caught:
+        engine.resolve_design_database({"daidir": str(elab)})
+    assert caught.value.code == "DESIGN_DB_ACCESS_FAILED"
+
+
+@pytest.mark.contract
+def test_tcl_imports_elab_after_l1_and_before_action(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    elab = _make_elab_dir(tmp_path)
+    npi_dir = tmp_path / "npi"
+    npi_dir.mkdir()
+    (npi_dir / "npi_L1.tcl").write_text(
+        "lappend ::elab_order source_l1\n"
+        "namespace eval ::npi_L1 {}\n"
+        "proc ::npi_L1::npi_mod_define_get_inst {definition output_name} {\n"
+        "  upvar 1 $output_name handles\n"
+        "  set handles {}\n"
+        "  lappend ::elab_order action\n"
+        "  return 0\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    response_path = tmp_path / "response.json"
+    order_path = tmp_path / "order.txt"
+    wrapper = tmp_path / "elab_order.tcl"
+    npi_script = (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").as_posix()
+    wrapper.write_text(
+        """
+set ::elab_order {}
+proc debImport args {lappend ::elab_order "debImport:[join $args |]"}
+proc debExit {} {return}
+set env(NPIL1_PATH) {%s}
+set env(KDEBUG_TCL_ACTION) module.find_instances
+set env(KDEBUG_TCL_DEFINITION) Target
+set env(KDEBUG_TCL_MAX_ROWS) 10
+set env(KDEBUG_TCL_ELAB) {%s}
+set env(KDEBUG_TCL_RESPONSE_JSON) {%s}
+source {%s}
+set fp [open {%s} w]
+puts $fp [join $::elab_order "\n"]
+close $fp
+"""
+        % (
+            npi_dir.as_posix(),
+            elab.as_posix(),
+            response_path.as_posix(),
+            npi_script,
+            order_path.as_posix(),
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert order_path.read_text(encoding="utf-8").splitlines() == [
+        "source_l1",
+        "debImport:-elab|%s" % elab.as_posix(),
+        "action",
+    ]
+    assert json.loads(response_path.read_text(encoding="utf-8"))["ok"] is True
 
 
 @pytest.mark.contract

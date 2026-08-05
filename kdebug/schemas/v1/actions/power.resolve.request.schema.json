@@ -30,7 +30,8 @@
       "properties": {
         "daidir": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "VCS simv.daidir or kdb.elab++ directory"
         },
         "session_id": {
           "type": "string",
