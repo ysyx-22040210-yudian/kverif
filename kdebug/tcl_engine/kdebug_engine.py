@@ -74,7 +74,7 @@ def session_dir(session_id):
 
 def socket_path(session_id):
     nominal = os.path.join(session_dir(session_id), "socket")
-    if len(nominal) < 104:
+    if len(os.fsencode(nominal)) < 104:
         return nominal
     return "/tmp/kdebug-%s-%s.sock" % (os.getuid(), fnv1a_hex(nominal))
 
@@ -814,8 +814,6 @@ def prepare_port_trace_environment(args, limits, target, tmpdir):
     stop_instances = args.get("stop_instances", [])
     if not isinstance(stop_instances, list):
         raise ValueError("args.stop_instances must be an array")
-    if len(stop_instances) > 4096:
-        raise ValueError("args.stop_instances must contain at most 4096 items")
     for index, instance in enumerate(stop_instances):
         if not isinstance(instance, str) or not instance:
             raise ValueError("args.stop_instances[%d] must be a non-empty string" % index)

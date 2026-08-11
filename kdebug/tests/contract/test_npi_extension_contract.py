@@ -220,6 +220,46 @@ def test_port_trace_environment_accepts_all_ports_and_rejects_bad_selects(
 
 
 @pytest.mark.contract
+def test_port_trace_environment_supports_large_stop_cut_sets(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    engine = _load_engine(kdebug_root)
+    stops = ["top.cluster_%05d.u_stop" % index for index in range(5001)]
+    env = engine.prepare_port_trace_environment(
+        {"module": "MSHR", "stop_instances": stops},
+        {},
+        {"daidir": "/data/build/simv.daidir"},
+        str(tmp_path),
+    )
+    rows = Path(env["KDEBUG_TCL_STOP_INSTANCE_PLAN"]).read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert [bytes.fromhex(row).decode("utf-8") for row in rows] == stops
+
+    with pytest.raises(ValueError, match="ports must contain at most 4096"):
+        engine.prepare_port_trace_environment(
+            {"module": "MSHR", "ports": ["p%d" % index for index in range(4097)]},
+            {},
+            {"daidir": "/data/build/simv.daidir"},
+            str(tmp_path),
+        )
+
+    schema = json.loads(
+        (
+            kdebug_root
+            / "schemas"
+            / "v1"
+            / "actions"
+            / "port.trace_batch.request.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    args_schema = schema["properties"]["args"]["properties"]
+    assert "maxItems" not in args_schema["stop_instances"]
+    assert args_schema["stop_instances"]["uniqueItems"] is True
+    assert args_schema["ports"]["maxItems"] == 4096
+
+
+@pytest.mark.contract
 def test_port_trace_response_schema_matches_runtime_required_fields(
     kdebug_root: Path,
 ) -> None:
@@ -506,6 +546,69 @@ puts "unlimited=[llength $kdebug_port_trace_full_rows]:$kdebug_port_trace_trunca
         "limited=1",
         "unlimited=3:0",
     ]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_indexes_large_stop_cut_sets(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_large_stops.tcl"
+    wrapper.write_text(
+        """
+source {%s}
+
+proc assert_stop_match {label expected signal_name} {
+    set actual [signal_belongs_to_stop_instance $signal_name]
+    if {$actual != $expected} {
+        puts stderr "FAILED $label signal={$signal_name} expected=$expected actual=$actual"
+        exit 2
+    }
+}
+
+set stops {}
+for {set index 0} {$index < 50000} {incr index} {
+    lappend stops "Top.tile${index}.u_stop"
+}
+configure_load_trace_stop_instances $stops
+if {[dict size $load_trace_stop_instance_set] != 50000} {
+    puts stderr "FAILED configured stop count"
+    exit 2
+}
+
+set current_trace_instance Top.tile7.u_stop
+assert_stop_match exact 1 Top.tile0.u_stop
+assert_stop_match exact_last 1 Top.tile49999.u_stop
+assert_stop_match direct 1 Top.tile0.u_stop.out
+assert_stop_match direct_child_port 1 Top.tile0.u_stop.child.out
+assert_stop_match deep 0 Top.tile0.u_stop.child.deep.out
+assert_stop_match slash 1 Top.tile0.u_stop/net/deep
+assert_stop_match current_exact 0 Top.tile7.u_stop
+assert_stop_match current_direct 0 Top.tile7.u_stop.out
+assert_stop_match current_deep 0 Top.tile7.u_stop.child.out
+assert_stop_match bit_select 1 {Top.tile0.u_stop.out[3]}
+assert_stop_match missing 0 Top.missing.u_stop.out
+assert_stop_match constant 0 {Const:1'b0}
+
+set started [clock milliseconds]
+for {set index 0} {$index < 2000} {incr index} {
+    if {[signal_belongs_to_stop_instance "Top.missing${index}.net"]} {
+        puts stderr "FAILED scaled miss query index=$index"
+        exit 2
+    }
+}
+puts "OK stops=50000 misses=2000 elapsed_ms=[expr {[clock milliseconds] - $started}]"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "OK stops=50000 misses=2000" in completed.stdout
 
 
 @pytest.mark.contract
