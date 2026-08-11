@@ -83,6 +83,24 @@ int main() {
     assert(text.find("bits:") == std::string::npos);
     assert(text.find("known: true") == std::string::npos);
 
+    Json preview_scalars = Json::array();
+    Json preview_rows = Json::array();
+    for (int i = 0; i < 25; ++i) {
+        preview_scalars.push_back("port_" + std::to_string(i));
+        preview_rows.push_back(Json{{"port", "port_" + std::to_string(i)}});
+    }
+    Json preview_response = {
+        {"api_version", "kdebug.v1"},
+        {"ok", true},
+        {"action", "port.trace_batch"},
+        {"data", {{"requested_ports", preview_scalars}, {"full_rows", preview_rows}}}
+    };
+    text = render_kout_response(preview_response);
+    assert(text.find("port_19") != std::string::npos);
+    assert(text.find("port_20") == std::string::npos);
+    assert(text.find("preview_truncated: 5 more items; use --json for full response") !=
+           std::string::npos);
+
     Json error = {
         {"ok", false},
         {"action", "trace.driver"},

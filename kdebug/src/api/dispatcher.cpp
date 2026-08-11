@@ -43,7 +43,7 @@ int request_timeout_ms(const Json& request) {
     Json limits = request.value("limits", Json::object());
     if (!limits.is_object() || !limits.contains("timeout_ms") ||
         !limits["timeout_ms"].is_number_integer()) {
-        return 30000;
+        return 120000;
     }
     int timeout_ms = limits["timeout_ms"].get<int>();
     if (timeout_ms < 0) return 0;
@@ -52,6 +52,25 @@ int request_timeout_ms(const Json& request) {
 
 bool is_socket_timeout_errno(int err) {
     return err == EAGAIN || err == EWOULDBLOCK || err == EINPROGRESS;
+}
+
+bool write_all_to_socket(int fd, const char* data, size_t size,
+                         size_t& bytes_written) {
+    bytes_written = 0;
+    while (bytes_written < size) {
+        ssize_t n = send(fd, data + bytes_written, size - bytes_written,
+                         MSG_NOSIGNAL);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (n == 0) {
+            errno = EIO;
+            return false;
+        }
+        bytes_written += static_cast<size_t>(n);
+    }
+    return true;
 }
 
 long long elapsed_ms_since(std::chrono::steady_clock::time_point begin) {
@@ -607,15 +626,15 @@ bool Dispatcher::send_to_socket(const std::string& session_id,
     Json rpc = request;
     rpc["api_version"] = "kdebug.internal.v1";
     std::string wire = rpc.dump() + "\n";
-    ssize_t written = write(fd, wire.c_str(), wire.size());
-    if (written != static_cast<ssize_t>(wire.size())) {
+    size_t written = 0;
+    if (!write_all_to_socket(fd, wire.c_str(), wire.size(), written)) {
         int err = errno;
         close(fd);
         Json ctx = transport_context(request, "socket.write.failed", session_id, socket_path, timeout_ms);
         ctx["errno"] = err;
         ctx["message"] = strerror(err);
         ctx["bytes_expected"] = wire.size();
-        ctx["bytes_written"] = written < 0 ? 0 : written;
+        ctx["bytes_written"] = written;
         ctx["elapsed_ms"] = elapsed_ms_since(begin);
         if (is_socket_timeout_errno(err)) {
             response = direct_socket_timeout_error(request, action, socket_path, timeout_ms);

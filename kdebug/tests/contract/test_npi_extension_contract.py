@@ -236,14 +236,6 @@ def test_port_trace_environment_supports_large_stop_cut_sets(
     ).splitlines()
     assert [bytes.fromhex(row).decode("utf-8") for row in rows] == stops
 
-    with pytest.raises(ValueError, match="ports must contain at most 4096"):
-        engine.prepare_port_trace_environment(
-            {"module": "MSHR", "ports": ["p%d" % index for index in range(4097)]},
-            {},
-            {"daidir": "/data/build/simv.daidir"},
-            str(tmp_path),
-        )
-
     schema = json.loads(
         (
             kdebug_root
@@ -256,7 +248,35 @@ def test_port_trace_environment_supports_large_stop_cut_sets(
     args_schema = schema["properties"]["args"]["properties"]
     assert "maxItems" not in args_schema["stop_instances"]
     assert args_schema["stop_instances"]["uniqueItems"] is True
-    assert args_schema["ports"]["maxItems"] == 4096
+    assert "maxItems" not in args_schema["ports"]
+    assert args_schema["ports"]["uniqueItems"] is True
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize("port_count", [5001, 50000])
+def test_port_trace_environment_supports_large_port_filters(
+    kdebug_root: Path, tmp_path: Path, port_count: int
+) -> None:
+    engine = _load_engine(kdebug_root)
+    ports = ["port_%05d" % index for index in range(port_count)]
+    env = engine.prepare_port_trace_environment(
+        {"module": "MSHR", "ports": ports},
+        {},
+        {"daidir": "/data/build/simv.daidir"},
+        str(tmp_path),
+    )
+    rows = Path(env["KDEBUG_TCL_PORT_PLAN"]).read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert [bytes.fromhex(row).decode("utf-8") for row in rows] == ports
+
+    with pytest.raises(ValueError, match="ports must not contain duplicates"):
+        engine.prepare_port_trace_environment(
+            {"module": "MSHR", "ports": ["ready", "ready"]},
+            {},
+            {"daidir": "/data/build/simv.daidir"},
+            str(tmp_path),
+        )
 
 
 @pytest.mark.contract
@@ -609,6 +629,81 @@ puts "OK stops=50000 misses=2000 elapsed_ms=[expr {[clock milliseconds] - $start
     )
     assert completed.returncode == 0, completed.stderr
     assert "OK stops=50000 misses=2000" in completed.stdout
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_indexes_large_port_filters(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_large_ports.tcl"
+    wrapper.write_text(
+        """
+source {%s}
+
+set ports {}
+for {set index 0} {$index < 50000} {incr index} {
+    lappend ports "port_${index}"
+}
+configure_port_trace_ports $ports
+if {[dict size $port_filter_set] != 50000} {
+    puts stderr "FAILED configured port count"
+    exit 2
+}
+if {![port_trace_port_selected port_0] ||
+    ![port_trace_port_selected port_49999] ||
+    [port_trace_port_selected port_missing]} {
+    puts stderr "FAILED indexed port membership"
+    exit 2
+}
+
+set started [clock milliseconds]
+for {set index 0} {$index < 2000} {incr index} {
+    if {![port_trace_port_selected "port_${index}"] ||
+        [port_trace_port_selected "missing_${index}"]} {
+        puts stderr "FAILED scaled port query index=$index"
+        exit 2
+    }
+}
+set elapsed [expr {[clock milliseconds] - $started}]
+if {$elapsed > 5000} {
+    puts stderr "FAILED indexed port queries elapsed_ms=$elapsed"
+    exit 2
+}
+
+configure_port_trace_ports {wide[0] wide[7:4] plain}
+set selected_wide [selected_port_names wide]
+if {[llength $selected_wide] != 2 ||
+    [lsearch -exact $selected_wide {wide[0]}] < 0 ||
+    [lsearch -exact $selected_wide {wide[7:4]}] < 0} {
+    puts stderr "FAILED bit/range select map: $selected_wide"
+    exit 2
+}
+if {![port_trace_port_selected wide] || ![port_trace_port_selected plain]} {
+    puts stderr "FAILED selected base ports"
+    exit 2
+}
+
+configure_port_trace_ports {}
+if {[dict size $port_filter_set] != 0 ||
+    [dict size $port_filter_select_map] != 0 ||
+    ![port_trace_port_selected any_design_port]} {
+    puts stderr "FAILED empty filter must select all ports"
+    exit 2
+}
+puts "OK ports=50000 hits=2000 misses=2000 elapsed_ms=$elapsed empty=all"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "OK ports=50000 hits=2000 misses=2000" in completed.stdout
+    assert "empty=all" in completed.stdout
 
 
 @pytest.mark.contract

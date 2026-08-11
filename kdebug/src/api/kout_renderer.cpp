@@ -86,8 +86,11 @@ void render_data_value(TextResponseBuilder& out, const std::string& key,
         out.emit_section(key);
         int n = std::min(20, (int)val.size());
         for (int i = 0; i < n; ++i) out.emit_row({json_to_kout_value(val[i])});
-        if ((int)val.size() > n)
-            out.emit_kv("(+ " + std::to_string(val.size() - n) + " more)", "");
+        if ((int)val.size() > n) {
+            out.emit_kv("preview_truncated",
+                        std::to_string(val.size() - n) +
+                            " more items; use --json for full response");
+        }
     } else if (val.is_array() && val.size() > 0 && val[0].is_object()) {
         int count = (int)val.size();
         out.emit_section(key);
@@ -112,8 +115,11 @@ void render_data_value(TextResponseBuilder& out, const std::string& key,
                 row.push_back(json_to_kout_value(val[i].value(k, Json())));
             out.emit_row(row);
         }
-        if (count > n)
-            out.emit_kv("(+ " + std::to_string(count - n) + " more)", "");
+        if (count > n) {
+            out.emit_kv("preview_truncated",
+                        std::to_string(count - n) +
+                            " more items; use --json for full response");
+        }
     } else if (val.is_object()) {
         out.emit_section(key);
         for (auto it = val.begin(); it != val.end(); ++it)
