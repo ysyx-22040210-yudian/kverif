@@ -237,6 +237,164 @@ def test_value_batch_at_transports_50000_signals_by_plan_file(
 
 
 @pytest.mark.contract
+def test_text_replace_line_transports_large_content_by_file(
+    kdebug_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    content = "replacement line\n" * 100000
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            self.env = kwargs["env"]
+            captured["command"] = command
+
+        def communicate(self, timeout=None):
+            assert "KDEBUG_TCL_CONTENT" not in self.env
+            captured["content"] = Path(
+                self.env["KDEBUG_TCL_CONTENT_FILE"]
+            ).read_text(encoding="utf-8")
+            Path(self.env["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps({"ok": True, "data": {"output": "/tmp/out.sv"}}),
+                encoding="utf-8",
+            )
+            return "", ""
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, data = engine.run_tcl_npi(
+        {
+            "action": "text.replace_line",
+            "target": {"daidir": "/data/build/simv.daidir"},
+            "args": {
+                "file": "design.sv",
+                "line": 1,
+                "content": content,
+                "output": "/tmp/out.sv",
+            },
+        },
+        {"target": {}},
+    )
+
+    assert ok is True
+    assert data["output"] == "/tmp/out.sv"
+    assert captured["content"] == content
+    assert len(content.encode("utf-8")) > 1024 * 1024
+
+
+@pytest.mark.contract
+def test_unbounded_request_scalars_use_controlled_plan_instead_of_environment(
+    kdebug_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    module = "top." + ("very_long_instance." * 10000) + "target"
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            self.env = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            assert "KDEBUG_TCL_MODULE" not in self.env
+            rows = Path(self.env["KDEBUG_TCL_SCALAR_PLAN"]).read_text(
+                encoding="utf-8"
+            ).splitlines()
+            captured.update(
+                {
+                    key: "" if value == "-" else bytes.fromhex(value).decode("utf-8")
+                    for key, value in (row.split("\t", 1) for row in rows)
+                }
+            )
+            Path(self.env["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps({"ok": True, "data": {"module": module}}),
+                encoding="utf-8",
+            )
+            return "", ""
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, data = engine.run_tcl_npi(
+        {
+            "action": "module.inspect",
+            "target": {"daidir": "/data/build/simv.daidir"},
+            "args": {"module": module, "sections": ["ports"]},
+        },
+        {"target": {}},
+    )
+
+    assert ok is True
+    assert data["module"] == module
+    assert captured["KDEBUG_TCL_MODULE"] == module
+    assert captured["KDEBUG_TCL_ACTION"] == "module.inspect"
+    assert len(module.encode("utf-8")) > 128 * 1024
+
+
+@pytest.mark.contract
+def test_tcl_loads_large_scalar_plan_without_request_values_in_environment(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    engine = _load_engine(kdebug_root)
+    module = "top." + ("deep_instance." * 12000) + "target"
+    plan = tmp_path / "request-scalars.tsv"
+    engine.write_tsv_plan(
+        str(plan),
+        [
+            ("KDEBUG_TCL_ACTION", engine.hex_plan_field("npi.capabilities")),
+            ("KDEBUG_TCL_MODULE", engine.hex_plan_field(module)),
+        ],
+    )
+    npi_dir = tmp_path / "npi"
+    npi_dir.mkdir()
+    (npi_dir / "npi_L1.tcl").write_text("", encoding="utf-8")
+    response = tmp_path / "response.json"
+    observed = tmp_path / "observed.txt"
+    wrapper = tmp_path / "scalar_plan.tcl"
+    wrapper.write_text(
+        "proc debExit {} {return}\nsource {%s}\n"
+            "set fp [open {%s} w]\n"
+            "fconfigure $fp -encoding utf-8 -translation binary\n"
+            "puts -nonewline $fp [env_or_empty KDEBUG_TCL_MODULE]\nclose $fp\n"
+        % (
+            (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").as_posix(),
+            observed.as_posix(),
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("KDEBUG_TCL_")
+    }
+    env.update(
+        {
+            "NPIL1_PATH": str(npi_dir),
+            "KDEBUG_TCL_SCALAR_PLAN": str(plan),
+            "KDEBUG_TCL_RESPONSE_JSON": str(response),
+        }
+    )
+
+    completed = subprocess.run(
+        [tclsh, str(wrapper)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(response.read_text(encoding="utf-8"))["ok"] is True
+    assert observed.read_text(encoding="utf-8") == module
+    assert len(module.encode("utf-8")) > 128 * 1024
+
+
+@pytest.mark.contract
 def test_port_trace_environment_accepts_all_ports_and_rejects_bad_selects(
     kdebug_root: Path, tmp_path: Path
 ) -> None:
@@ -2092,10 +2250,12 @@ def test_source_filelist_target_builds_controlled_verdi_argv(
             "top": "system",
         },
         "power.resolve",
+        str(tmp_path),
     )
     assert argv == [
-        "+define+NOVAS_UPF_PKG",
         "-sv",
+        "-f",
+        str(tmp_path / "verdi-defines.f"),
         "-f",
         str(filelist),
         "-upf2.0",
@@ -2103,9 +2263,58 @@ def test_source_filelist_target_builds_controlled_verdi_argv(
         "-top",
         "system",
     ]
+    assert (tmp_path / "verdi-defines.f").read_text(
+        encoding="utf-8"
+    ).splitlines() == ["+define+NOVAS_UPF_PKG"]
     assert engine.design_workdir_for_target(
         {"filelist": str(filelist)}, "power.resolve", "/tmp/fallback"
     ) == str(tmp_path)
+
+
+@pytest.mark.contract
+def test_source_filelist_transports_50000_defines_without_argv_growth(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    engine = _load_engine(kdebug_root)
+    filelist = tmp_path / "run.f"
+    filelist.write_text("design.sv\n", encoding="utf-8")
+    defines = ["FEATURE_%05d=1" % index for index in range(50000)]
+
+    argv = engine.design_args_for_target(
+        {"filelist": str(filelist), "defines": defines},
+        "power.resolve",
+        str(tmp_path),
+    )
+    lines = (tmp_path / "verdi-defines.f").read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+    assert argv == [
+        "-sv",
+        "-f",
+        str(tmp_path / "verdi-defines.f"),
+        "-f",
+        str(filelist),
+    ]
+    assert lines[:2] == ["+define+FEATURE_00000=1", "+define+FEATURE_00001=1"]
+    assert lines[-1] == "+define+FEATURE_49999=1"
+    assert len(lines) == len(defines)
+
+
+@pytest.mark.contract
+def test_source_filelist_rejects_define_newline_injection(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    engine = _load_engine(kdebug_root)
+    filelist = tmp_path / "run.f"
+    filelist.write_text("design.sv\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not contain newlines"):
+        engine.design_args_for_target(
+            {"filelist": str(filelist), "defines": ["GOOD\n-f\nevil.f"]},
+            "power.resolve",
+            str(tmp_path),
+        )
 
 
 @pytest.mark.contract

@@ -134,7 +134,7 @@ bool read_json_limited(const std::string& path, Json& out, std::string& message)
         message = std::string("open failed: ") + std::strerror(errno);
         return false;
     }
-    int max_bytes = file_exchange_max_json_bytes();
+    long long max_bytes = file_exchange_max_json_bytes();
     std::string text;
     char buf[8192];
     while (true) {
@@ -146,7 +146,8 @@ bool read_json_limited(const std::string& path, Json& out, std::string& message)
             return false;
         }
         if (n == 0) break;
-        if (text.size() + static_cast<size_t>(n) > static_cast<size_t>(max_bytes)) {
+        if (max_bytes > 0 &&
+            text.size() + static_cast<size_t>(n) > static_cast<size_t>(max_bytes)) {
             message = "JSON file exceeds KDEBUG_FILE_MAX_JSON_BYTES";
             close(fd);
             return false;
@@ -285,11 +286,8 @@ int file_exchange_poll_interval_ms() {
     return static_cast<int>(value);
 }
 
-int file_exchange_max_json_bytes() {
-    long long value = env_ll("KDEBUG_FILE_MAX_JSON_BYTES", 67108864LL);
-    if (value <= 0) value = 67108864LL;
-    if (value > 1024LL * 1024LL * 1024LL) value = 1024LL * 1024LL * 1024LL;
-    return static_cast<int>(value);
+long long file_exchange_max_json_bytes() {
+    return env_ll("KDEBUG_FILE_MAX_JSON_BYTES", 0);
 }
 
 int file_exchange_claim_timeout_ms(int request_timeout_ms) {

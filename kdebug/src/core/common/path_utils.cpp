@@ -1,9 +1,12 @@
 #include "common/path_utils.h"
 
+#include <cerrno>
 #include <cstdlib>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <unistd.h>
+#include <vector>
 
 namespace kdebug_core {
 
@@ -42,6 +45,32 @@ std::string safe_dir_prefix(const std::string& session_id) {
 std::string home_dir() {
     const char* home = std::getenv("HOME");
     return home ? std::string(home) : std::string("/tmp");
+}
+
+std::string current_working_dir() {
+    size_t size = 256;
+    while (size <= std::numeric_limits<size_t>::max() / 2) {
+        std::vector<char> buffer(size);
+        errno = 0;
+        if (getcwd(buffer.data(), buffer.size())) return std::string(buffer.data());
+        if (errno != ERANGE) return std::string();
+        size *= 2;
+    }
+    return std::string();
+}
+
+std::string read_symlink_target(const std::string& path) {
+    size_t size = 256;
+    while (size <= std::numeric_limits<size_t>::max() / 2) {
+        std::vector<char> buffer(size);
+        ssize_t length = readlink(path.c_str(), buffer.data(), buffer.size());
+        if (length < 0) return std::string();
+        if (static_cast<size_t>(length) < buffer.size()) {
+            return std::string(buffer.data(), static_cast<size_t>(length));
+        }
+        size *= 2;
+    }
+    return std::string();
 }
 
 std::string tool_home_dir(const ToolConfig& config) {

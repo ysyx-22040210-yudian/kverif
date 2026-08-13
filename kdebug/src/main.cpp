@@ -4,6 +4,7 @@
 #include "api/response.h"
 #include "api/stdio_loop.h"
 #include "api/kout_renderer.h"
+#include "common/path_utils.h"
 #include "logging/action_log.h"
 #include "process/process_runner.h"
 
@@ -353,10 +354,8 @@ int dispatch_request(const kdebug::Json& request, OutputFormat format) {
 }
 
 std::string executable_dir() {
-    char path[4096] = {};
-    ssize_t length = readlink("/proc/self/exe", path, sizeof(path) - 1);
-    if (length <= 0) return ".";
-    std::string full(path, static_cast<size_t>(length));
+    const std::string full = kdebug_core::read_symlink_target("/proc/self/exe");
+    if (full.empty()) return ".";
     size_t slash = full.rfind('/');
     return slash == std::string::npos ? "." : full.substr(0, slash);
 }

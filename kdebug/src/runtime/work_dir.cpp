@@ -1,7 +1,7 @@
 #include "runtime/work_dir.h"
+#include "common/path_utils.h"
 
 #include <cstdlib>
-#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -30,9 +30,8 @@ bool ensure_runtime_work_dir(const std::string& path) {
 
 ScopedRuntimeWorkDir::ScopedRuntimeWorkDir(const std::string& component)
     : path_(runtime_work_dir(component)), changed_(false) {
-    char cwd[PATH_MAX] = {};
-    if (!getcwd(cwd, sizeof(cwd)) || !ensure_runtime_work_dir(path_)) return;
-    previous_ = cwd;
+    previous_ = kdebug_core::current_working_dir();
+    if (previous_.empty() || !ensure_runtime_work_dir(path_)) return;
     changed_ = chdir(path_.c_str()) == 0;
 }
 

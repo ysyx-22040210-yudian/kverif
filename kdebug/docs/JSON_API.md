@@ -84,7 +84,7 @@ file transport directory:
   heartbeat/   worker liveness files
 ```
 
-普通请求默认等待 300 秒，可用 `KDEBUG_FILE_TRANSPORT_TIMEOUT_MS` 调整；ping/quit 默认等待 2 秒，可用 `KDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS` 调整。`KDEBUG_FILE_KEEP_HISTORY=1` 默认保留 `done/failed` 证据链。`KDEBUG_FILE_MAX_JSON_BYTES` 限制单个 request/response JSON 文件大小，`KDEBUG_FILE_CLAIM_TIMEOUT_MS` 控制 stale claim 判定。
+普通请求默认等待 300 秒，可用 `KDEBUG_FILE_TRANSPORT_TIMEOUT_MS` 调整；ping/quit 默认等待 2 秒，可用 `KDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS` 调整。`KDEBUG_FILE_KEEP_HISTORY=1` 默认保留 `done/failed` 证据链。单个 request/response JSON 默认不设固定字节上限；设置正整数 `KDEBUG_FILE_MAX_JSON_BYTES` 可显式限制单文件大小。`KDEBUG_FILE_CLAIM_TIMEOUT_MS` 控制 stale claim 判定。
 
 `session.open` 使用 TCP：
 

@@ -155,7 +155,7 @@ file transport directory:
 
 request 先写到 `tmp/`，再 atomic publish 到 `requests/`；daemon 用 `rename()` 抢到 `claims/`；response 写到 `responses/`，client 读完后默认归档到 `done/`。过期 request、坏 request、stale claim 和 client timeout 进入 `failed/`。如果旧 session 目录里还有 `locks/`，它只是历史残留，可以忽略。
 
-普通 file transport 请求默认等待 300 秒，可用 `KDEBUG_FILE_TRANSPORT_TIMEOUT_MS` 调整；ping/quit 默认等待 2 秒，可用 `KDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS` 调整。大窗口 `axi.analysis`、`signal.changes` 或深层 `trace.graph` 如果确实需要更久，优先调普通请求 timeout，不要改 ping timeout。`KDEBUG_FILE_KEEP_HISTORY=1` 默认保留证据链；`KDEBUG_FILE_CLAIM_TIMEOUT_MS`、`KDEBUG_FILE_POLL_INTERVAL_MS`、`KDEBUG_FILE_MAX_JSON_BYTES`、`KDEBUG_FILE_DONE_TTL_SEC`、`KDEBUG_FILE_FAILED_TTL_SEC` 可用于高级排障和清理。
+普通 file transport 请求默认等待 300 秒，可用 `KDEBUG_FILE_TRANSPORT_TIMEOUT_MS` 调整；ping/quit 默认等待 2 秒，可用 `KDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS` 调整。大窗口 `axi.analysis`、`signal.changes` 或深层 `trace.graph` 如果确实需要更久，优先调普通请求 timeout，不要改 ping timeout。`KDEBUG_FILE_KEEP_HISTORY=1` 默认保留证据链；`KDEBUG_FILE_CLAIM_TIMEOUT_MS`、`KDEBUG_FILE_POLL_INTERVAL_MS`、`KDEBUG_FILE_DONE_TTL_SEC`、`KDEBUG_FILE_FAILED_TTL_SEC` 可用于高级排障和清理。单个 request/response JSON 默认不设固定字节上限；资源受限环境可设置正整数 `KDEBUG_FILE_MAX_JSON_BYTES` 来显式启用上限。
 
 ### MCP wrapper
 
@@ -905,6 +905,11 @@ VM 全流程由普通用户 `host` 使用 Verdi/VCS O-2018.09-SP2 验证。20 �
 输出还由 public `scope.list` 重开。Power 两项不能算功能压测通过，获得
 `PowerAwareAnalysis` license 后仍需重跑。完整命令、逐 action/kind 耗时和机器证据见
 [`tests/vm/npi_actions/evidence/stress-report.md`](tests/vm/npi_actions/evidence/stress-report.md)。
+
+2026-08-14 又完成请求数量、字符串长度、文件传输、UDS、subprocess 和路径长度的同类
+限制审计，并在真实 XiangShan `kdb.elab++` 上重跑 50000 stop-set、5265-port inventory
+和常量证据。审计范围、保留预算、耗时、RSS 与响应 hash 见
+[`docs/SCALE_LIMIT_AUDIT_20260814.md`](docs/SCALE_LIMIT_AUDIT_20260814.md)。
 
 逐字段参数、完整命令、返回数据处理和二次开发边界见
 [二次开发手册 10.2.1](../doc/secondary_development_guide.md#1021-verdi-2018-npi-独立-action)。

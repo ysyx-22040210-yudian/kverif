@@ -6,6 +6,8 @@
 #include <cassert>
 #include <cstdlib>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int main() {
     kdebug_core::ToolConfig config = kdebug_core::make_tool_config("kdebug", ".kdebug", "kdebug", "1.0");
@@ -60,6 +62,38 @@ int main() {
     assert(short_socket.size() < 104);
     if (old_home) setenv("HOME", saved_home.c_str(), 1);
     else unsetenv("HOME");
+
+    const std::string cwd = kdebug_core::current_working_dir();
+    assert(!cwd.empty());
+    char link_template[] = "/tmp/kdebug_path_utils_link_XXXXXX";
+    int link_fd = mkstemp(link_template);
+    assert(link_fd >= 0);
+    close(link_fd);
+    unlink(link_template);
+    const std::string long_target = "/" + std::string(512, 'x');
+    assert(symlink(long_target.c_str(), link_template) == 0);
+    assert(kdebug_core::read_symlink_target(link_template) == long_target);
+    unlink(link_template);
+
+    char deep_template[] = "/tmp/kdebug_deep_cwd_XXXXXX";
+    char* deep_root = mkdtemp(deep_template);
+    assert(deep_root != nullptr);
+    assert(chdir(deep_root) == 0);
+    const std::string segment(220, 'd');
+    const int segment_count = 20;
+    for (int i = 0; i < segment_count; ++i) {
+        assert(mkdir(segment.c_str(), 0700) == 0);
+        assert(chdir(segment.c_str()) == 0);
+    }
+    const std::string deep_cwd = kdebug_core::current_working_dir();
+    assert(deep_cwd.size() > 4096);
+    assert(!kdebug_core::read_symlink_target("/proc/self/exe").empty());
+    for (int i = 0; i < segment_count; ++i) {
+        assert(chdir("..") == 0);
+        assert(rmdir(segment.c_str()) == 0);
+    }
+    assert(chdir(cwd.c_str()) == 0);
+    assert(rmdir(deep_root) == 0);
 
     assert(kdebug_core::resource_content_matches(100, 4096, 100, 4096));
     assert(!kdebug_core::resource_identity_differs(10, 20, 10, 20));

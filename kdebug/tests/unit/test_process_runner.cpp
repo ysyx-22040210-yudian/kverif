@@ -21,6 +21,18 @@ int main() {
     }
 
     {
+        const std::string large_input(2 * 1024 * 1024, 'x');
+        kdebug::ProcessRequest request;
+        request.executable = "/bin/cat";
+        request.stdin_text = large_input;
+        request.timeout_ms = 5000;
+        kdebug::ProcessResult result = runner.run(request);
+        assert(result.exit_code == 0);
+        assert(!result.timed_out);
+        assert(result.stdout_text == large_input);
+    }
+
+    {
         kdebug::ProcessRequest request;
         request.executable = "/bin/sh";
         request.argv = {

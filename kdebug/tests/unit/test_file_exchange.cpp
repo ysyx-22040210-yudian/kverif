@@ -182,5 +182,56 @@ int main() {
     assert(too_big.status == "invalid_request");
     assert(exists(join_path(join_path(dir, "failed"), too_big_id + ".invalid_request.json")));
 
+    unsetenv("KDEBUG_FILE_MAX_JSON_BYTES");
+    assert(kdebug_core::file_exchange_max_json_bytes() == 0);
+    setenv("KDEBUG_FILE_MAX_JSON_BYTES", "2147483648", 1);
+    assert(kdebug_core::file_exchange_max_json_bytes() == 2147483648LL);
+
+    const char* run_large_stress = getenv("KDEBUG_RUN_LARGE_FILE_EXCHANGE_STRESS");
+    if (run_large_stress && std::string(run_large_stress) == "1") {
+        unsetenv("KDEBUG_FILE_MAX_JSON_BYTES");
+        setenv("KDEBUG_FILE_KEEP_HISTORY", "0", 1);
+        const size_t payload_size = 65U * 1024U * 1024U;
+        const std::string request_payload(payload_size, 'q');
+        const std::string large_dir = dir + "_large";
+
+        pid_t large_child = fork();
+        assert(large_child >= 0);
+        if (large_child == 0) {
+            for (int i = 0; i < 600; ++i) {
+                kdebug_core::FileClaimResult c =
+                    kdebug_core::file_exchange_claim_one(large_dir, "agent_large");
+                if (c.claimed && c.ready) {
+                    const std::string received = c.request.value("payload", std::string());
+                    if (received.size() != payload_size || received.front() != 'q' ||
+                        received.back() != 'q') {
+                        _exit(3);
+                    }
+                    Json w = {{"agent_id", "agent_large"},
+                              {"host", "unit"},
+                              {"pid", static_cast<int>(getpid())}};
+                    Json response = {{"payload", std::string(payload_size, 'r')}};
+                    bool ok = kdebug_core::file_exchange_complete_claim(
+                        large_dir, c, response, true, "ok", "", w);
+                    _exit(ok ? 0 : 2);
+                }
+                usleep(100000);
+            }
+            _exit(1);
+        }
+
+        kdebug_core::FileExchangeResult large = kdebug_core::file_exchange_send_request(
+            large_dir, {{"payload", request_payload}}, 120000);
+        assert(large.ok);
+        const std::string response_payload =
+            large.response.value("payload", std::string());
+        assert(response_payload.size() == payload_size);
+        assert(response_payload.front() == 'r' && response_payload.back() == 'r');
+        assert(waitpid(large_child, &status, 0) == large_child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        assert(unlink(join_path(join_path(large_dir, "done"),
+                                large.request_id + ".claim.json").c_str()) == 0);
+    }
+
     return 0;
 }

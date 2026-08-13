@@ -7,6 +7,8 @@
 namespace kdebug_core {
 
 std::string home_dir();
+std::string current_working_dir();
+std::string read_symlink_target(const std::string& path);
 std::string tool_home_dir(const ToolConfig& config);
 std::string tool_sessions_dir(const ToolConfig& config);
 bool is_valid_session_name(const std::string& session_id);

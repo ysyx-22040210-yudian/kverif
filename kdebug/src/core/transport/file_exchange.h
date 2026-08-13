@@ -82,7 +82,7 @@ int file_exchange_gc(const std::string& dir);
 long long file_exchange_now_us();
 
 int file_exchange_poll_interval_ms();
-int file_exchange_max_json_bytes();
+long long file_exchange_max_json_bytes();
 int file_exchange_claim_timeout_ms(int request_timeout_ms);
 bool file_exchange_keep_history();
 

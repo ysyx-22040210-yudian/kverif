@@ -650,6 +650,82 @@ def test_session_uds_transports_large_port_request_without_truncation(
 
 @pytest.mark.session
 @pytest.mark.design
+def test_session_uds_transports_response_larger_than_one_mib(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+    tmp_path: Path,
+) -> None:
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("Unix domain sockets are unavailable on this platform")
+    socket_path = tmp_path / "large-response.sock"
+    ready = threading.Event()
+    server_error: list[BaseException] = []
+    payload = "trace-evidence-" * 100000
+
+    def serve_large_response() -> None:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(str(socket_path))
+                server.listen(1)
+                ready.set()
+                conn, _ = server.accept()
+                with conn:
+                    request = bytearray()
+                    while b"\n" not in request:
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            break
+                        request.extend(chunk)
+                    response = {
+                        "ok": True,
+                        "data": {
+                            "payload": payload,
+                            "summary": {"payload_bytes": len(payload)},
+                        },
+                    }
+                    conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
+        except BaseException as exc:
+            server_error.append(exc)
+            ready.set()
+
+    thread = threading.Thread(target=serve_large_response, daemon=True)
+    thread.start()
+    assert ready.wait(timeout=2.0)
+    assert not server_error
+
+    _write_registry_session(
+        isolated_home,
+        {
+            "session_id": "large_response",
+            "transport": "uds",
+            "dbdir_path": resource_targets["design"]["daidir"],
+            "socket_path": str(socket_path),
+            "server_pid": 0,
+        },
+    )
+
+    try:
+        result = cli_runner.run(
+            _request(
+                "module.find_instances",
+                target={"session_id": "large_response"},
+                args={"definition": "Dispatch"},
+            ),
+            timeout_sec=30.0,
+        )
+
+        assert result.ok, result.stderr_raw
+        assert result.response["data"]["payload"] == payload
+        assert len(result.stdout_raw.encode("utf-8")) > 1024 * 1024
+        assert not server_error
+    finally:
+        thread.join(timeout=2.0)
+        _kill_all(cli_runner)
+
+
+@pytest.mark.session
+@pytest.mark.design
 def test_session_uds_preserves_structured_trace_failure_details(
     resource_targets: dict,
     cli_runner: CliRunner,

@@ -10,7 +10,6 @@
 
 #include <cerrno>
 #include <chrono>
-#include <limits.h>
 #include <string>
 #include <cstring>
 #include <unistd.h>
@@ -163,8 +162,8 @@ bool backend_cleanup_ok(const Json& response) {
 
 std::string stable_resource_path(const std::string& path) {
     if (path.empty() || path[0] == '/') return path;
-    char cwd[PATH_MAX] = {};
-    return getcwd(cwd, sizeof(cwd)) ? std::string(cwd) + "/" + path : path;
+    const std::string cwd = kdebug_core::current_working_dir();
+    return cwd.empty() ? path : cwd + "/" + path;
 }
 
 void stabilize_resource_paths(Json& target) {
