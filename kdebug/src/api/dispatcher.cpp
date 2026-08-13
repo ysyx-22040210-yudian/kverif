@@ -713,7 +713,15 @@ bool Dispatcher::send_to_socket(const std::string& session_id,
                     continue;
                 public_data[key] = it.value();
             }
-            if (!public_data.empty()) response["data"] = public_data;
+            if (!public_data.empty()) {
+                response["data"] = public_data;
+                Json error_details = response["error"].value("details", Json::object());
+                if (!error_details.is_object()) error_details = Json::object();
+                for (auto it = public_data.begin(); it != public_data.end(); ++it) {
+                    error_details[it.key()] = it.value();
+                }
+                response["error"]["details"] = error_details;
+            }
             if (details.contains("truncated") && details["truncated"].is_boolean())
                 response["meta"] = {{"truncated", details["truncated"].get<bool>()}};
         }

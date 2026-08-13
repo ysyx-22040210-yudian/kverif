@@ -648,6 +648,97 @@ def test_session_uds_transports_large_port_request_without_truncation(
         _kill_all(cli_runner)
 
 
+@pytest.mark.session
+@pytest.mark.design
+def test_session_uds_preserves_structured_trace_failure_details(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+    tmp_path: Path,
+) -> None:
+    socket_path = tmp_path / "trace-failure-details.sock"
+    ready = threading.Event()
+    server_error: list[BaseException] = []
+    instance_error = {
+        "scope": "instance",
+        "code": "INSTANCE_TRACE_FAILED",
+        "message": "can't use invalid octal number as operand of -",
+        "instance": "top.u_bad",
+    }
+    stats = {
+        "processed_instances": 0,
+        "failed_instances": 1,
+        "skipped_instances": 0,
+        "error_count": 1,
+    }
+
+    def serve_trace_failure() -> None:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(str(socket_path))
+                server.listen(1)
+                ready.set()
+                conn, _ = server.accept()
+                with conn:
+                    conn.recv(65536)
+                    response = {
+                        "ok": False,
+                        "error": {
+                            "code": "TRACE_FAILED",
+                            "message": "all instances failed",
+                        },
+                        "details": {
+                            "code": "TRACE_FAILED",
+                            "message": "all instances failed",
+                            "module": "Dut",
+                            "errors": [instance_error],
+                            "stats": stats,
+                        },
+                    }
+                    conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
+        except BaseException as exc:
+            server_error.append(exc)
+            ready.set()
+
+    thread = threading.Thread(target=serve_trace_failure, daemon=True)
+    thread.start()
+    assert ready.wait(timeout=2.0)
+    assert not server_error
+    _write_registry_session(
+        isolated_home,
+        {
+            "session_id": "trace_failure",
+            "transport": "uds",
+            "dbdir_path": resource_targets["design"]["daidir"],
+            "socket_path": str(socket_path),
+            "server_pid": 0,
+        },
+    )
+
+    try:
+        result = cli_runner.run(
+            _request(
+                "port.trace_batch",
+                target={"session_id": "trace_failure"},
+                args={"module": "Dut", "ports": ["a[8]"]},
+            ),
+            timeout_sec=5.0,
+        )
+
+        assert not result.ok
+        assert result.response["error"]["code"] == "TRACE_FAILED"
+        details = result.response["error"]["details"]
+        assert details["module"] == "Dut"
+        assert details["errors"] == [instance_error]
+        assert details["stats"] == stats
+        # Retain the historical public data mirror for compatibility.
+        assert result.response["data"]["errors"] == [instance_error]
+        assert not server_error
+    finally:
+        thread.join(timeout=2.0)
+        _kill_all(cli_runner)
+
+
 def test_engine_crash_marker_is_written_by_signal_handler(
     repo_root: Path,
     kdebug_root: Path,

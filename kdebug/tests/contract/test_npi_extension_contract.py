@@ -174,21 +174,66 @@ def test_scope_plan_rejects_up_above_root(kdebug_root: Path, tmp_path: Path) -> 
 
 
 @pytest.mark.contract
+@pytest.mark.parametrize("signal_count", [2, 50000])
 def test_string_batch_plan_is_hex_encoded_and_ordered(
+    signal_count: int,
     kdebug_root: Path, tmp_path: Path
 ) -> None:
     engine = _load_engine(kdebug_root)
+    signals = ["top.u_%05d.ready[0]" % index for index in range(signal_count)]
     path = engine.prepare_string_batch_plan(
-        {"signals": ["top.u_a.ready[0]", "top.u_b.valid"]},
+        {"signals": signals},
         "signals",
         str(tmp_path),
         "signals.tsv",
     )
     rows = Path(path).read_text(encoding="utf-8").splitlines()
-    assert [bytes.fromhex(row).decode("utf-8") for row in rows] == [
-        "top.u_a.ready[0]",
-        "top.u_b.valid",
-    ]
+    assert [bytes.fromhex(row).decode("utf-8") for row in rows] == signals
+
+
+@pytest.mark.contract
+def test_value_batch_at_transports_50000_signals_by_plan_file(
+    kdebug_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    signals = ["top.u_%05d.ready[0]" % index for index in range(50000)]
+    captured = {}
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            self.env = kwargs["env"]
+            captured["command"] = command
+
+        def communicate(self, timeout=None):
+            assert "KDEBUG_TCL_SIGNALS" not in self.env
+            plan = Path(self.env["KDEBUG_TCL_SIGNAL_PLAN"])
+            captured["signals"] = [
+                bytes.fromhex(row).decode("utf-8")
+                for row in plan.read_text(encoding="utf-8").splitlines()
+            ]
+            Path(self.env["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps({"ok": True, "data": {"values": []}}),
+                encoding="utf-8",
+            )
+            return "", ""
+
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, data = engine.run_tcl_npi(
+        {
+            "action": "value.batch_at",
+            "target": {"fsdb": "/data/waves.fsdb"},
+            "args": {"signals": signals, "time": "10ns"},
+        },
+        {"target": {}},
+    )
+
+    assert ok is True
+    assert data["values"] == []
+    assert captured["signals"] == signals
+    assert sum(len(signal) for signal in signals) >= 1000000
 
 
 @pytest.mark.contract
@@ -209,6 +254,36 @@ def test_port_trace_environment_accepts_all_ports_and_rejects_bad_selects(
     assert bytes.fromhex(stop_row).decode("utf-8") == "top.u_stop"
     assert env["KDEBUG_TCL_MAX_PARENT_DEPTH"] == "16"
     assert env["KDEBUG_TCL_MAX_NODES"] == "20000"
+
+    normalized = engine.prepare_port_trace_environment(
+        {
+            "module": "MSHR",
+            "ports": [
+                "io_id[0008]",
+                "io_range[0009:0000]",
+                "huge[09223372036854775808]",
+            ],
+        },
+        {},
+        {"daidir": "/data/build/simv.daidir"},
+        str(tmp_path),
+    )
+    normalized_rows = Path(normalized["KDEBUG_TCL_PORT_PLAN"]).read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert [bytes.fromhex(row).decode("utf-8") for row in normalized_rows] == [
+        "io_id[8]",
+        "io_range[9:0]",
+        "huge[9223372036854775808]",
+    ]
+
+    with pytest.raises(ValueError, match="ports must not contain duplicates"):
+        engine.prepare_port_trace_environment(
+            {"module": "MSHR", "ports": ["io_id[8]", "io_id[08]"]},
+            {},
+            {"daidir": "/data/build/simv.daidir"},
+            str(tmp_path),
+        )
 
     with pytest.raises(ValueError, match="valid port or bit-select"):
         engine.prepare_port_trace_environment(
@@ -376,7 +451,9 @@ def test_port_trace_batch_runs_one_verdi_process_and_postprocesses_evidence(
     assert ok is True
     assert len(calls) == 1
     assert planned_ports == ["a[0]"]
-    assert calls[0].command[-2:] == ["-dbdir", "/data/build/simv.daidir"]
+    assert calls[0].command[-2:] == [
+        "-dbdir", engine.normalized_path("/data/build/simv.daidir")
+    ]
     assert data["full_rows"][0]["signal_full_name"] == "Const:1'b1"
     assert data["boundary_rows"][0]["signal_full_name"] == "Const:1'b1"
     assert data["evidence"][0]["effective"] is True
@@ -565,6 +642,337 @@ puts "unlimited=[llength $kdebug_port_trace_full_rows]:$kdebug_port_trace_trunca
         "boundary=2:TRACE_LIMIT_REACHED:row_limit",
         "limited=1",
         "unlimited=3:0",
+    ]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_hdl_decimal_text_never_uses_tcl_octal(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_decimal_indices.tcl"
+    wrapper.write_text(
+        r"""
+source {%s}
+puts "decimal-09=[normalize_decimal_uint 09]"
+puts "decimal-010=[normalize_decimal_uint 010]"
+puts "decimal-zero=[normalize_decimal_uint 000]"
+puts "invalid-decimal=[list [normalize_decimal_uint {}] [normalize_decimal_uint x] [normalize_decimal_uint -1]]"
+puts "lhs-offset=[lhs_select_rhs_bit_for_target {[09:00]} 09]"
+puts "invalid-lhs-offset=[lhs_select_rhs_bit_for_target {[09:00]} x]"
+puts "rhs-offset=[lindex [rhs_item_offsets_for_signal_bit {a[09:00]} a 09] 0]"
+set widths [parse_signal_width_text {logic [09:00] a;}]
+puts "decl-width=[dict get $widths a]"
+puts "expr-width=[expr_item_width {a[09:00]}]"
+puts "select-bits=[join [select_selected_bits {[09:08]}] ,]"
+puts "decimal-literal=[project_const_literal_to_bit {Const:010} 1]"
+puts "invalid-literal-bit=[project_const_literal_to_bit {Const:09} x]"
+puts "normalized-name=[normalize_signal_name {top.a[010]}]"
+puts "trace-limits=[list [kdebug_port_trace_int 08 16] [kdebug_port_trace_int 09 16] [kdebug_port_trace_int 010 16] [kdebug_port_trace_int x 16]]"
+puts "select-suffix=[bits_to_select_suffix {010 08 09 09}]"
+puts "large-select-suffix=[bits_to_select_suffix {9223372036854775808 9223372036854775809}]"
+puts "invalid-select-suffix=[bits_to_select_suffix {08 x}]"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == [
+        "decimal-09=9",
+        "decimal-010=10",
+        "decimal-zero=0",
+        "invalid-decimal={} {} {}",
+        "lhs-offset=9",
+        "invalid-lhs-offset=",
+        "rhs-offset=9",
+        "decl-width=10",
+        "expr-width=10",
+        "select-bits=8,9",
+        "decimal-literal=Const:1'b1",
+        "invalid-literal-bit=",
+        "normalized-name=top.a[10]",
+        "trace-limits=8 9 10 16",
+        "select-suffix=[10:8]",
+        "large-select-suffix=[9223372036854775809:9223372036854775808]",
+        "invalid-select-suffix=",
+    ]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_depth_markers_require_observed_continuation(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_depth_markers.tcl"
+    wrapper.write_text(
+        r"""
+source {%s}
+namespace eval ::npi_L1 {}
+proc log_step {msg} {}
+proc hdl_to_name {hdl args} {
+    if {$hdl eq "ASSIGN"} {return top.assign_net}
+    if {$hdl eq "EXPR"} {return expr_net}
+    if {$hdl eq "DRIVER_EXPR"} {return expr_driver}
+    if {$hdl eq "LOAD_ASSIGN"} {return top.load_net}
+    if {$hdl eq "LOAD_NEXT"} {return top.load_next}
+    if {$hdl eq "LEAF"} {return top.leaf}
+    if {$hdl eq "NEXT"} {return top.next}
+    return $hdl
+}
+proc hdl_evidence_name {hdl} {return "hdl:$hdl"}
+proc hdl_kind {hdl} {
+    if {$hdl eq "ASSIGN" || $hdl eq "NEXT"} {return net}
+    if {$hdl eq "EXPR" || $hdl eq "DRIVER_EXPR"} {return expr}
+    if {$hdl eq "LOAD_ASSIGN" || $hdl eq "LOAD_NEXT"} {return net}
+    return pin
+}
+proc signal_belongs_to_stop_instance {name} {return 0}
+proc exact_literal_handle_for_driver {hdl} {return ""}
+proc raw_bit_driver_handles_by_hdl {hdl status_var count_var} {
+    upvar 1 $status_var status $count_var count
+    set status 1
+    set count 0
+    return {}
+}
+proc ::npi_L1::npi_nl_pass_assign_cell {hdl} {
+    if {$hdl eq "ASSIGN"} {return NEXT}
+    return ""
+}
+proc module_port_high_conn_pairs {hdl signame role args} {return {}}
+proc scoped_signal_for_query {signame args} {return $signame}
+proc collect_conn_module_ports_by_name {signame role all_var module_var} {}
+proc ::npi_L1::npi_nl_trace_load {signame result_var args} {
+    upvar 1 $result_var result
+    if {$signame eq "expr_net"} {
+        set result {NEXT}
+    } elseif {$signame eq "top.load_net"} {
+        set result {LOAD_NEXT}
+    } else {
+        set result {}
+    }
+}
+proc ::npi_L1::npi_nl_trace_driver {signame result_var args} {
+    upvar 1 $result_var result
+    if {$signame eq "expr_driver"} {set result {NEXT}} else {set result {}}
+}
+
+set const_trace_max_depth 4
+set assign_trace_max_depth 0
+set assign_expr_trace_max_depth 0
+reset_trace_depth_limit_markers
+puts "leaf-decision=[trace_endpoint_expansion_decision driver LEAF top.leaf 0 0]"
+puts "leaf-markers=[trace_depth_limit_markers_for_role driver]"
+puts "assign-decision=[trace_endpoint_expansion_decision driver ASSIGN top.assign_net 0 0]"
+puts "assign-repeat=[trace_endpoint_expansion_decision driver ASSIGN top.assign_net 0 0]"
+puts "driver-expr-decision=[trace_endpoint_expansion_decision driver DRIVER_EXPR expr_driver 0 0]"
+puts "load-assign-decision=[trace_endpoint_expansion_decision load LOAD_ASSIGN top.load_net 0 0]"
+puts "expr-decision=[trace_endpoint_expansion_decision load EXPR expr_net 0 0]"
+set all_drivers {top.other_branch}
+set module_drivers {}
+append_trace_depth_limit_markers driver all_drivers module_drivers
+puts "driver=$all_drivers|boundary=$module_drivers"
+puts "load=[trace_depth_limit_markers_for_role load]"
+set kdebug_port_trace_max_rows 0
+set kdebug_port_trace_full_rows {}
+set kdebug_port_trace_boundary_rows {}
+set kdebug_port_trace_truncated 0
+set kdebug_port_trace_row_limit_surfaces [dict create]
+foreach marker $all_drivers {
+    write_trace_row __KDEBUG_FULL__ top.u_dut a input driver $marker
+}
+foreach marker $module_drivers {
+    write_trace_row __KDEBUG_BOUNDARY__ top.u_dut a input driver $marker
+}
+puts "rows=[dict get [lindex $kdebug_port_trace_full_rows end] signal_full_name]|boundary-row=[dict get [lindex $kdebug_port_trace_boundary_rows end] signal_full_name]|truncated=$kdebug_port_trace_truncated"
+
+reset_trace_depth_limit_markers
+set visited {}
+puts "exact-leaf=[expand_exact_assign_driver_handle LEAF 0 visited]"
+puts "exact-leaf-markers=[trace_depth_limit_markers_for_role driver]"
+set visited {}
+puts "exact-chain=[expand_exact_assign_driver_handle ASSIGN 0 visited]"
+puts "exact-chain-markers=[trace_depth_limit_markers_for_role driver]"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == [
+        "leaf-decision=",
+        "leaf-markers=",
+        "assign-decision=",
+        "assign-repeat=",
+        "driver-expr-decision=",
+        "load-assign-decision=",
+        "expr-decision=",
+        "driver=top.other_branch TRACE_LIMIT_REACHED:assign_depth_0 TRACE_LIMIT_REACHED:expr_depth_0|boundary=TRACE_LIMIT_REACHED:assign_depth_0 TRACE_LIMIT_REACHED:expr_depth_0",
+        "load=TRACE_LIMIT_REACHED:assign_depth_0 TRACE_LIMIT_REACHED:expr_depth_0",
+        "rows=TRACE_LIMIT_REACHED:expr_depth_0|boundary-row=TRACE_LIMIT_REACHED:expr_depth_0|truncated=1",
+        "exact-leaf=LEAF",
+        "exact-leaf-markers=",
+        "exact-chain=ASSIGN",
+        "exact-chain-markers=TRACE_LIMIT_REACHED:assign_depth_0",
+    ]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_parent_depth_marker_distinguishes_leaf_and_loop(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_parent_depth_marker.tcl"
+    wrapper.write_text(
+        r"""
+source {%s}
+proc log_step {msg} {}
+proc log_const_source_detail {args} {}
+proc qualify_signal_for_log {name args} {return $name}
+proc get_inst_port_handle_by_signal {inst sig} {
+    if {$inst eq "top.u"} {return START}
+    if {$inst eq "top" && $sig eq "top.next"} {return NEXT}
+    if {$inst eq "top" && $sig eq "top.loop"} {return LOOP}
+    return ""
+}
+proc get_port_name {hdl} {return p_$hdl}
+proc get_high_conn_sigs_for_port_hdl {inst hdl} {
+    if {$hdl eq "START" && $::case_name eq "chain"} {return {H_NEXT}}
+    if {$hdl eq "START" && $::case_name eq "leaf"} {return {H_LEAF}}
+    if {$hdl eq "START" && $::case_name eq "loop"} {return {H_LOOP}}
+    if {$hdl eq "NEXT"} {return {H_CONST}}
+    if {$hdl eq "LOOP"} {return {H_LOOP}}
+    return {}
+}
+proc hdl_to_selected_name {hdl args} {
+    if {$hdl eq "H_NEXT"} {return top.next}
+    if {$hdl eq "H_LEAF"} {return top.no_port}
+    if {$hdl eq "H_LOOP"} {return top.loop}
+    if {$hdl eq "H_CONST"} {return "1'b1"}
+    return ""
+}
+proc select_hdl_for_signal_select {hdl select} {return $hdl}
+proc parent_instance_path {inst} {
+    if {$inst eq "top.u"} {return top}
+    return ""
+}
+proc hdl_evidence_name {hdl} {return "hdl:$hdl"}
+proc hdl_kind {hdl} {return net}
+
+set const_trace_max_depth 1
+set assign_trace_max_depth 2
+set assign_expr_trace_max_depth 1
+foreach case_name {chain leaf loop} {
+    reset_trace_depth_limit_markers
+    const_driver_from_parent_ports START top.u.start top.u 1
+    puts "$case_name=[trace_depth_limit_markers_for_role driver]"
+}
+set const_trace_max_depth 0
+reset_trace_depth_limit_markers
+set case_name chain
+const_driver_from_parent_ports START top.u.start top.u 0
+puts "disabled-but-proven=[trace_depth_limit_markers_for_role driver]"
+reset_trace_depth_limit_markers
+set case_name leaf
+const_driver_from_parent_ports START top.u.start top.u 0
+puts "disabled-leaf=[trace_depth_limit_markers_for_role driver]"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == [
+        "chain=TRACE_LIMIT_REACHED:parent_depth_1",
+        "leaf=",
+        "loop=",
+        "disabled-but-proven=TRACE_LIMIT_REACHED:parent_depth_0",
+        "disabled-leaf=TRACE_LIMIT_REACHED:parent_depth_0",
+    ]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_source_expr_depth_marker_distinguishes_direct_and_leaf(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_source_expr_depth_marker.tcl"
+    wrapper.write_text(
+        r"""
+source {%s}
+proc log_step {msg} {}
+proc source_assign_driver_sources_core {hdl signame srcfile include_expr args} {
+    if {!$include_expr} {
+        if {$signame eq "top.direct"} {return {top.direct_next}}
+        return {}
+    }
+    if {$signame eq "top.chain"} {return {top.expr_next}}
+    if {$signame eq "top.direct"} {return {top.direct_next}}
+    if {$signame eq "top.const_chain"} {return {top.const_mid}}
+    if {$signame eq "top.const_mid"} {return {{1'b1}}}
+    return {}
+}
+proc source_assign_load_fanouts_core {hdl signame include_expr srcfile args} {
+    if {!$include_expr} {
+        if {$signame eq "top.direct"} {return {top.direct_next}}
+        return {}
+    }
+    if {$signame eq "top.chain"} {return {top.expr_next}}
+    if {$signame eq "top.direct"} {return {top.direct_next}}
+    return {}
+}
+proc signal_scope_hint_after {signame args} {return ""}
+proc log_const_sources_for_signal {args} {}
+
+set const_trace_max_depth 4
+set assign_trace_max_depth 2
+set assign_expr_trace_max_depth 0
+foreach signame {top.chain top.direct top.leaf} {
+    reset_trace_depth_limit_markers
+    source_assign_driver_sources "" $signame dummy.sv ""
+    source_assign_load_fanouts "" $signame dummy.sv ""
+    puts "$signame|driver=[trace_depth_limit_markers_for_role driver]|load=[trace_depth_limit_markers_for_role load]"
+}
+
+set assign_expr_trace_max_depth 1
+reset_trace_depth_limit_markers
+set visited {}
+puts "const-depth1=[source_assign_const_chain top.const_chain dummy.sv 1 visited]"
+puts "const-marker=[trace_depth_limit_markers_for_role driver]"
+reset_trace_depth_limit_markers
+set visited {}
+puts "leaf-depth1=[source_assign_const_chain top.leaf dummy.sv 1 visited]"
+puts "leaf-marker=[trace_depth_limit_markers_for_role driver]"
+"""
+        % (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == [
+        "top.chain|driver=TRACE_LIMIT_REACHED:expr_depth_0|load=TRACE_LIMIT_REACHED:expr_depth_0",
+        "top.direct|driver=|load=",
+        "top.leaf|driver=|load=",
+        "const-depth1=",
+        "const-marker=TRACE_LIMIT_REACHED:expr_depth_1",
+        "leaf-depth1=",
+        "leaf-marker=",
     ]
 
 
@@ -820,7 +1228,7 @@ proc source {path} {
             set ::kdebug_port_trace_evidence [list [dict create method source_port_connection value Const:1'b1 const_full_path top.u_dut.a<-Const:1'b1 fields $fields]]
             set ::kdebug_port_trace_errors {}
             set ::kdebug_port_trace_truncated 0
-            return [list 1 "" "" 1 0]
+            return [list 1 "" "" 1 0 0]
         }
         return
     }
@@ -865,6 +1273,440 @@ __real_source {%s}
     assert payload["data"]["boundary_rows"][0]["signal_full_name"] == "top.boundary"
     evidence = payload["data"]["evidence"][0]
     assert evidence["provenance"]["path"] == ["top.u_dut.a", "Const:1'b1"]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_wrapper_preserves_all_failed_instance_details(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    port_plan = tmp_path / "ports.tsv"
+    stop_plan = tmp_path / "stops.tsv"
+    response_path = tmp_path / "response.json"
+    npi_dir = tmp_path / "npi"
+    npi_dir.mkdir()
+    (npi_dir / "npi_L1.tcl").write_text("", encoding="utf-8")
+    port_plan.write_bytes(("%s\n" % "a[08]".encode("utf-8").hex()).encode("ascii"))
+    stop_plan.write_bytes(b"")
+    wrapper = tmp_path / "port_trace_all_failed_stub.tcl"
+    npi_script = (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").as_posix()
+    wrapper.write_text(
+        r'''
+rename source __real_source
+proc source {path} {
+    if {[string match *npi_L1.tcl $path]} {return}
+    if {[file tail $path] eq "kdebug_port_trace.tcl"} {
+        uplevel 1 [list __real_source $path]
+        rename kdebug_port_trace_run kdebug_port_trace_run_legacy
+        proc kdebug_port_trace_run {module ports stops source fallback full boundary args} {
+            set ::kdebug_port_trace_errors [list \
+                [dict create scope instance code INSTANCE_TRACE_FAILED message {can't use invalid octal number as operand of "-"} instance top.u0] \
+                [dict create scope instance code INSTANCE_TRACE_FAILED message {second original failure} instance top.u1]]
+            return [list 0 TRACE_FAILED {all instances failed} 0 1 2]
+        }
+        return
+    }
+    uplevel 1 [list __real_source $path]
+}
+rename exit __real_exit
+proc exit args {return}
+set env(NPIL1_PATH) {%s}
+set env(KDEBUG_TCL_ACTION) port.trace_batch
+set env(KDEBUG_TCL_MODULE) Dut
+set env(KDEBUG_TCL_PORT_PLAN) {%s}
+set env(KDEBUG_TCL_STOP_INSTANCE_PLAN) {%s}
+set env(KDEBUG_TCL_RESPONSE_JSON) {%s}
+set env(KDEBUG_TCL_SOURCE_FALLBACK) 1
+set env(KDEBUG_TCL_INCLUDE_FULL) 1
+set env(KDEBUG_TCL_INCLUDE_BOUNDARY) 0
+set env(KDEBUG_TCL_MAX_PARENT_DEPTH) 16
+set env(KDEBUG_TCL_MAX_ASSIGN_DEPTH) 2
+set env(KDEBUG_TCL_MAX_EXPR_DEPTH) 1
+set env(KDEBUG_TCL_MAX_NODES) 20000
+set env(KDEBUG_TCL_MAX_EDGES) 100000
+set env(KDEBUG_TCL_MAX_API_RESULTS) 20000
+set env(KDEBUG_TCL_MAX_ROWS) 20000
+__real_source {%s}
+'''
+        % (
+            npi_dir.as_posix(),
+            port_plan.as_posix(),
+            stop_plan.as_posix(),
+            response_path.as_posix(),
+            npi_script,
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(response_path.read_text(encoding="utf-8"))
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "TRACE_FAILED"
+    details = payload["error"]["details"]
+    assert details["module"] == "Dut"
+    assert details["requested_ports"] == ["a[08]"]
+    assert details["stats"] == {
+        "processed_instances": 0,
+        "failed_instances": 2,
+        "skipped_instances": 1,
+        "error_count": 2,
+    }
+    assert [item["instance"] for item in details["errors"]] == ["top.u0", "top.u1"]
+    assert "invalid octal number" in details["errors"][0]["message"]
+
+
+@pytest.mark.contract
+def test_port_trace_tcl_wrapper_preserves_all_skipped_instance_details(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    port_plan = tmp_path / "ports.tsv"
+    stop_plan = tmp_path / "stops.tsv"
+    response_path = tmp_path / "response.json"
+    npi_dir = tmp_path / "npi"
+    npi_dir.mkdir()
+    (npi_dir / "npi_L1.tcl").write_text("", encoding="utf-8")
+    port_plan.write_bytes(("%s\n" % "a".encode("utf-8").hex()).encode("ascii"))
+    stop_plan.write_bytes(b"")
+    wrapper = tmp_path / "port_trace_all_skipped_stub.tcl"
+    npi_script = (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").as_posix()
+    wrapper.write_text(
+        r'''
+rename source __real_source
+proc source {path} {
+    if {[string match *npi_L1.tcl $path]} {return}
+    if {[file tail $path] eq "kdebug_port_trace.tcl"} {
+        uplevel 1 [list __real_source $path]
+        rename kdebug_port_trace_run kdebug_port_trace_run_legacy
+        proc kdebug_port_trace_run args {
+            set ::kdebug_port_trace_errors [list [dict create \
+                scope instance code INSTANCE_PATH_UNAVAILABLE \
+                message {could not resolve an instance path} handle HDL_1]]
+            return [list 0 TRACE_FAILED \
+                {port trace produced no successful instances; inspect instance_errors} 0 1 0]
+        }
+        return
+    }
+    uplevel 1 [list __real_source $path]
+}
+rename exit __real_exit
+proc exit args {return}
+set env(NPIL1_PATH) {%s}
+set env(KDEBUG_TCL_ACTION) port.trace_batch
+set env(KDEBUG_TCL_MODULE) Dut
+set env(KDEBUG_TCL_PORT_PLAN) {%s}
+set env(KDEBUG_TCL_STOP_INSTANCE_PLAN) {%s}
+set env(KDEBUG_TCL_RESPONSE_JSON) {%s}
+set env(KDEBUG_TCL_SOURCE_FALLBACK) 1
+set env(KDEBUG_TCL_INCLUDE_FULL) 1
+set env(KDEBUG_TCL_INCLUDE_BOUNDARY) 1
+set env(KDEBUG_TCL_MAX_PARENT_DEPTH) 16
+set env(KDEBUG_TCL_MAX_ASSIGN_DEPTH) 2
+set env(KDEBUG_TCL_MAX_EXPR_DEPTH) 1
+set env(KDEBUG_TCL_MAX_NODES) 20000
+set env(KDEBUG_TCL_MAX_EDGES) 100000
+set env(KDEBUG_TCL_MAX_API_RESULTS) 20000
+set env(KDEBUG_TCL_MAX_ROWS) 20000
+__real_source {%s}
+'''
+        % (
+            npi_dir.as_posix(),
+            port_plan.as_posix(),
+            stop_plan.as_posix(),
+            response_path.as_posix(),
+            npi_script,
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(response_path.read_text(encoding="utf-8"))
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "TRACE_FAILED"
+    details = payload["error"]["details"]
+    assert details["module"] == "Dut"
+    assert details["errors"] == [
+        {
+            "scope": "instance",
+            "code": "INSTANCE_PATH_UNAVAILABLE",
+            "message": "could not resolve an instance path",
+            "handle": "HDL_1",
+        }
+    ]
+    assert details["stats"] == {
+        "processed_instances": 0,
+        "failed_instances": 0,
+        "skipped_instances": 1,
+        "error_count": 1,
+    }
+
+
+@pytest.mark.contract
+def test_port_trace_run_rejects_all_unresolved_instance_paths(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_all_paths_unresolved.tcl"
+    trace_script = (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix()
+    wrapper.write_text(
+        r'''
+source {%s}
+namespace eval ::npi_L1 {}
+proc ::npi_L1::npi_find_inst_with_def_wildcard {scope module output_name} {
+    upvar 1 $output_name handles
+    set handles {fake_handle}
+}
+proc get_instance_path {handle} {return {}}
+proc npi_release_handle args {return}
+lassign [kdebug_port_trace_run Dut {a} {} {} 1 1 1 16 2 1 20000 100000 20000 20000 0] \
+    succeeded code message processed skipped failed
+if {$succeeded || $code ne "TRACE_FAILED" || $processed != 0 || \
+    $skipped != 1 || $failed != 0} {
+    puts stderr "unexpected result: $succeeded $code $processed $skipped $failed"
+    exit 2
+}
+if {[llength $::kdebug_port_trace_errors] != 1} {
+    puts stderr "expected one instance path error"
+    exit 2
+}
+set error_record [lindex $::kdebug_port_trace_errors 0]
+if {[dict get $error_record code] ne "INSTANCE_PATH_UNAVAILABLE" || \
+    [dict get $error_record handle] ne "fake_handle"} {
+    puts stderr "instance path evidence is incomplete: $error_record"
+    exit 2
+}
+puts OK
+'''
+        % trace_script,
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "OK"
+
+
+@pytest.mark.contract
+def test_port_trace_instance_failure_with_boundary_disabled_does_not_write_empty_channel(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_no_boundary.tcl"
+    trace_script = (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix()
+    wrapper.write_text(
+        r'''
+source {%s}
+namespace eval ::npi_L1 {}
+proc ::npi_L1::npi_find_inst_with_def_wildcard {scope module output_name} {
+    upvar 1 $output_name handles
+    set handles {fake_handle}
+}
+proc get_instance_path {handle} {return top.u_bad}
+proc process_instance args {error {synthetic instance failure}}
+proc npi_release_handle args {return}
+lassign [kdebug_port_trace_run Dut {a} {} {} 1 1 0 16 2 1 20000 100000 20000 20000 0] \
+    succeeded code message processed skipped failed
+if {$succeeded || $code ne "TRACE_FAILED" || $processed != 0 || $failed != 1} {
+    puts stderr "unexpected result: $succeeded $code $processed $skipped $failed"
+    exit 2
+}
+if {[llength $::kdebug_port_trace_boundary_rows] != 0} {
+    puts stderr "boundary rows should remain empty"
+    exit 2
+}
+puts OK
+'''
+        % trace_script,
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "OK"
+
+
+@pytest.mark.contract
+def test_port_trace_rolls_back_failed_instance_and_keeps_successful_instance(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+    wrapper = tmp_path / "port_trace_partial_failure.tcl"
+    trace_script = (kdebug_root / "tcl_engine" / "kdebug_port_trace.tcl").as_posix()
+    wrapper.write_text(
+        r'''
+source {%s}
+namespace eval ::npi_L1 {}
+proc ::npi_L1::npi_find_inst_with_def_wildcard {scope module output_name} {
+    upvar 1 $output_name handles
+    set handles {good_handle bad_handle}
+}
+proc get_instance_path {handle} {
+    if {$handle eq "good_handle"} {return top.u_good}
+    return top.u_bad
+}
+proc npi_release_handle args {return}
+proc process_instance {inst_path parent_path instname full_fh boundary_fh} {
+    set full_row [dict create inst_full_name $inst_path port_name a port_dir input role driver signal_full_name "${inst_path}.source"]
+    set boundary_row [dict create inst_full_name $inst_path port_name a port_dir input role driver signal_full_name "${inst_path}.boundary"]
+    lappend ::kdebug_port_trace_full_rows $full_row
+    lappend ::kdebug_port_trace_boundary_rows $boundary_row
+    lappend ::kdebug_port_trace_evidence [dict create \
+        method source_port_connection value Const:1'b1 \
+        const_full_path "${inst_path}.a<-Const:1'b1" fields {}]
+    dict set ::kdebug_port_trace_seen_ports "${inst_path}|a" 1
+    if {$inst_path eq "top.u_bad"} {
+        set ::kdebug_port_trace_truncated 1
+        error {can't use invalid octal number as operand of "-"}
+    }
+}
+lassign [kdebug_port_trace_run Dut {a} {} {} 1 1 1 16 2 1 20000 100000 20000 20000 0] \
+    succeeded code message processed skipped failed
+if {!$succeeded || $processed != 1 || $failed != 1 || $skipped != 0} {
+    puts stderr "unexpected result: $succeeded $code $processed $skipped $failed"
+    exit 2
+}
+if {[llength $::kdebug_port_trace_evidence] != 1 || \
+    [dict get [lindex $::kdebug_port_trace_evidence 0] const_full_path] ne "top.u_good.a<-Const:1'b1"} {
+    puts stderr "failed instance evidence was not rolled back"
+    exit 2
+}
+if {[dict exists $::kdebug_port_trace_seen_ports "top.u_bad|a"] || \
+    ![dict exists $::kdebug_port_trace_seen_ports "top.u_good|a"]} {
+    puts stderr "failed instance seen-port state was not rolled back"
+    exit 2
+}
+if {$::kdebug_port_trace_truncated} {
+    puts stderr "failed instance truncation state was not rolled back"
+    exit 2
+}
+foreach rows [list $::kdebug_port_trace_full_rows $::kdebug_port_trace_boundary_rows] {
+    if {[llength $rows] != 3} {
+        puts stderr "expected one success row and two failure markers"
+        exit 2
+    }
+    set signals {}
+    foreach row $rows {lappend signals [dict get $row signal_full_name]}
+    if {[lsearch -exact $signals top.u_bad.source] >= 0 || \
+        [lsearch -exact $signals top.u_bad.boundary] >= 0} {
+        puts stderr "failed instance partial row survived rollback"
+        exit 2
+    }
+    if {[llength [lsearch -all -exact $signals ERROR:INSTANCE_TRACE_FAILED]] != 2} {
+        puts stderr "failure markers are incomplete"
+        exit 2
+    }
+}
+if {[llength $::kdebug_port_trace_errors] != 1 || \
+    [dict get [lindex $::kdebug_port_trace_errors 0] instance] ne "top.u_bad"} {
+    puts stderr "instance error evidence is missing"
+    exit 2
+}
+puts OK
+'''
+        % trace_script,
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [tclsh, str(wrapper)], capture_output=True, text=True, timeout=20
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "OK"
+
+
+@pytest.mark.contract
+def test_tcl_failure_details_survive_public_and_session_responses(
+    kdebug_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = _load_engine(kdebug_root)
+    details = {
+        "module": "Dut",
+        "errors": [{
+            "scope": "instance",
+            "code": "INSTANCE_TRACE_FAILED",
+            "message": "original trace failure",
+            "instance": "top.u0",
+        }],
+        "stats": {
+            "processed_instances": 0,
+            "failed_instances": 1,
+            "skipped_instances": 0,
+            "error_count": 1,
+        },
+    }
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            self.env = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            Path(self.env["KDEBUG_TCL_RESPONSE_JSON"]).write_text(
+                json.dumps({
+                    "ok": False,
+                    "error": {
+                        "code": "TRACE_FAILED",
+                        "message": "all instances failed",
+                        "details": details,
+                    },
+                }),
+                encoding="utf-8",
+            )
+            return "", "verdi diagnostic"
+
+    monkeypatch.setattr(engine, "resolve_design_database", lambda target: {
+        "kind": "daidir", "path": "/data/build/simv.daidir"
+    })
+    monkeypatch.setattr(engine, "find_verdi", lambda: "/fake/verdi")
+    monkeypatch.setattr(engine.subprocess, "Popen", FakePopen)
+    ok, error = engine.run_tcl_npi(
+        {
+            "action": "port.trace_batch",
+            "target": {"daidir": "/data/build/simv.daidir"},
+            "args": {"module": "Dut", "ports": ["a"]},
+        },
+        {"target": {}},
+    )
+    assert ok is False
+    assert error["errors"] == details["errors"]
+    assert error["stats"] == details["stats"]
+    public = engine.wrap_public_action_response(
+        {"action": "port.trace_batch"}, False, error
+    )
+    assert public["error"]["details"]["errors"] == details["errors"]
+
+    monkeypatch.setattr(engine.Registry, "get", lambda self, session_id: {
+        "session_id": session_id,
+        "mode": "design",
+        "transport": "uds",
+    })
+    monkeypatch.setattr(engine, "route_to_session", lambda record, request: {
+        "ok": False,
+        "error": {"code": "TRACE_FAILED", "message": "all instances failed"},
+        "details": error,
+    })
+    session_public = engine.one_shot_engine_action({
+        "action": "port.trace_batch",
+        "target": {"session_id": "trace_session"},
+    })
+    assert session_public["error"]["details"]["errors"] == details["errors"]
+    assert session_public["error"]["details"]["stats"] == details["stats"]
 
 
 @pytest.mark.contract
@@ -1030,6 +1872,192 @@ def test_module_inspect_batch_runs_one_verdi_process(
         "error_count": 1,
         "truncated": False,
     }
+
+
+@pytest.mark.contract
+def test_module_find_instances_round_trips_into_inspect_when_language_lookup_misses(
+    kdebug_root: Path, tmp_path: Path
+) -> None:
+    tclsh = shutil.which("tclsh")
+    if not tclsh:
+        pytest.skip("tclsh is unavailable")
+
+    parent = "tb_top.sim.cpu.l_soc.core_with_l2.l2top.inner_l2cache.slices_0.mshrCtl"
+    valid_with_parameter = f"{parent}.mshrs_8"
+    valid_without_parameter = f"{parent}.mshrs_9"
+    missing = f"{parent}.mshrs_10"
+    npi_dir = tmp_path / "npi"
+    npi_dir.mkdir()
+    (npi_dir / "npi_L1.tcl").write_text(
+        r'''
+namespace eval ::npi_L1 {}
+set ::fixture_parent {%s}
+set ::fixture_paths [list {%s} {%s}]
+
+proc ::npi_L1::npi_mod_define_get_inst {definition output_name} {
+    upvar 1 $output_name handles
+    if {$definition eq "MSHR"} {
+        set handles {INST8 INST9}
+        return 2
+    }
+    set handles {}
+    return 0
+}
+
+proc ::npi_L1::npi_mod_inst_get_parameter {module output_name} {
+    upvar 1 $output_name handles
+    if {$module eq [lindex $::fixture_paths 0]} {
+        set handles {PARAM}
+        return 1
+    }
+    set handles {}
+    return 0
+}
+
+proc ::npi_L1::npi_mod_inst_get_instance {module output_name} {
+    upvar 1 $output_name handles
+    if {$module eq $::fixture_parent} {
+        set handles {INST8 INST9}
+        return 2
+    }
+    set handles {}
+    return 0
+}
+
+proc ::npi_L1::npi_mod_inst_get_instance_in_gen_scope {module output_name} {
+    upvar 1 $output_name handles
+    set handles {}
+    return 0
+}
+
+proc npi_handle_by_name args {
+    # Reproduce the elab++ false negative for generated numeric hierarchy names.
+    return ""
+}
+
+proc npi_get_str args {
+    array set option $args
+    set hdl $option(-object)
+    set property $option(-property)
+    if {$hdl eq "INST8"} {set full_name [lindex $::fixture_paths 0]}
+    if {$hdl eq "INST9"} {set full_name [lindex $::fixture_paths 1]}
+    if {$hdl eq "PARAM"} {set full_name "[lindex $::fixture_paths 0].SETS"}
+    switch -- $property {
+        npiFullName {return $full_name}
+        npiName {
+            if {$hdl eq "INST8"} {return mshrs_8}
+            if {$hdl eq "INST9"} {return mshrs_9}
+            if {$hdl eq "PARAM"} {return SETS}
+        }
+        npiType {
+            if {$hdl eq "PARAM"} {return npiParameter}
+            return npiModule
+        }
+        npiDefName {
+            if {$hdl ne "PARAM"} {return MSHR}
+        }
+        npiConstType {
+            if {$hdl eq "PARAM"} {return npiDecConst}
+        }
+    }
+    return ""
+}
+
+proc npi_get args {
+    array set option $args
+    if {$option(-object) eq "PARAM" && $option(-property) eq "npiSize"} {return 32}
+    return ""
+}
+
+proc npi_get_value args {
+    array set option $args
+    if {$option(-object) eq "PARAM"} {return 16}
+    return NPI_GET_VALUE_ERROR_STR
+}
+
+proc npi_release_handle args {return}
+''' % (parent, valid_with_parameter, valid_without_parameter),
+        encoding="utf-8",
+    )
+    wrapper = tmp_path / "module_round_trip.tcl"
+    wrapper.write_text(
+        "proc debExit {} {return}\nsource {%s}\n"
+        % (kdebug_root / "tcl_engine" / "kdebug_npi.tcl").as_posix(),
+        encoding="utf-8",
+    )
+
+    def run_action(action: str, response: Path, **env_values: str) -> dict:
+        env = os.environ.copy()
+        env.update(
+            {
+                "NPIL1_PATH": str(npi_dir),
+                "KDEBUG_TCL_ACTION": action,
+                "KDEBUG_TCL_RESPONSE_JSON": str(response),
+                "KDEBUG_TCL_MAX_ROWS": "20",
+            }
+        )
+        env.update(env_values)
+        completed = subprocess.run(
+            [tclsh, str(wrapper)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+        )
+        assert completed.returncode == 0, completed.stderr
+        return json.loads(response.read_text(encoding="utf-8"))
+
+    find_response = run_action(
+        "module.find_instances",
+        tmp_path / "find.json",
+        KDEBUG_TCL_DEFINITION="MSHR",
+    )
+    found_paths = [
+        item["object"]["full_name"] for item in find_response["data"]["instances"]
+    ]
+    assert found_paths == [valid_with_parameter, valid_without_parameter]
+
+    plan = tmp_path / "inspect.tsv"
+    plan.write_bytes(
+        "\n".join(path.encode("utf-8").hex() for path in [*found_paths, missing])
+        .encode("ascii")
+        + b"\n",
+    )
+    inspect_response = run_action(
+        "module.inspect_batch",
+        tmp_path / "inspect.json",
+        KDEBUG_TCL_BATCH_PLAN=str(plan),
+        KDEBUG_TCL_SECTIONS="parameters",
+    )
+    inspections = inspect_response["data"]["inspections"]
+    assert [(item["module"], item["ok"]) for item in inspections] == [
+        (valid_with_parameter, True),
+        (valid_without_parameter, True),
+        (missing, False),
+    ]
+    assert inspections[0]["data"]["counts"] == {"parameters": 1}
+    assert inspections[1]["data"]["counts"] == {"parameters": 0}
+    assert (
+        inspections[1]["data"]["module_object"]["object"]["full_name"]
+        == valid_without_parameter
+    )
+    assert inspections[2]["error"]["code"] == "MODULE_NOT_FOUND"
+    assert inspect_response["data"]["summary"] == {
+        "module_count": 3,
+        "success_count": 2,
+        "error_count": 1,
+        "truncated": False,
+    }
+
+    missing_response = run_action(
+        "module.inspect",
+        tmp_path / "inspect_missing.json",
+        KDEBUG_TCL_MODULE=missing,
+        KDEBUG_TCL_SECTIONS="parameters",
+    )
+    assert missing_response["ok"] is False
+    assert missing_response["error"]["code"] == "MODULE_NOT_FOUND"
+    assert missing in missing_response["error"]["message"]
 
 
 @pytest.mark.contract
